@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-dark: #0a0a1a;
+  --color-bg-light: #FAFAF8;
+  --color-panel-dark: #14142b;
+  --color-panel-light: #FFFFFF;
+  --color-surface: #14142b;
+  --color-surface-elevated: #1e1e3a;
+
+  --color-teal-fill: #9FE1CB;
+  --color-teal-stroke: #0F6E56;
+  --color-teal-text: #04342C;
+  --color-teal-fill-dark: #04342C;
+  --color-teal-stroke-dark: #9FE1CB;
+
+  --color-purple-fill: #CECBF6;
+  --color-purple-stroke: #534AB7;
+  --color-purple-text: #26215C;
+  --color-purple-fill-dark: #26215C;
+  --color-purple-stroke-dark: #CECBF6;
+
+  --color-coral-fill: #F5C4B3;
+  --color-coral-stroke: #993C1D;
+  --color-coral-text: #4A1B0C;
+  --color-coral-fill-dark: #4A1B0C;
+  --color-coral-stroke-dark: #F5C4B3;
+
+  --color-blue-fill: #B5D4F4;
+  --color-blue-stroke: #185FA5;
+  --color-blue-text: #042C53;
+  --color-blue-fill-dark: #042C53;
+  --color-blue-stroke-dark: #B5D4F4;
+
+  --color-amber-fill: #FAC775;
+  --color-amber-stroke: #BA7517;
+  --color-amber-text: #412402;
+  --color-amber-fill-dark: #412402;
+  --color-amber-stroke-dark: #FAC775;
+
+  --color-pink-fill: #F4C0D1;
+  --color-pink-stroke: #993556;
+  --color-pink-text: #4B1528;
+  --color-pink-fill-dark: #4B1528;
+  --color-pink-stroke-dark: #F4C0D1;
+
+  --color-green-fill: #C0DD97;
+  --color-green-stroke: #3B6D11;
+  --color-green-text: #173404;
+  --color-green-fill-dark: #173404;
+  --color-green-stroke-dark: #C0DD97;
+
+  --color-gray-fill: #D3D1C7;
+  --color-gray-stroke: #5F5E5A;
+  --color-gray-text: #2C2C2A;
+  --color-gray-fill-dark: #2C2C2A;
+  --color-gray-stroke-dark: #D3D1C7;
+
+  /* Neon landing accents */
+  --color-neon-cyan: #06b6d4;
+  --color-neon-purple: #8b5cf6;
+  --color-neon-emerald: #10b981;
+  --color-neon-amber: #f59e0b;
+  --color-neon-pink: #ec4899;
+
+  /* Landing page surfaces */
+  --color-landing-bg-from: #0a0a0f;
+  --color-landing-bg-to: #0d1117;
+  --color-landing-surface: rgba(15,15,20,0.8);
+  --color-landing-glass: rgba(15,15,20,0.6);
+  --color-landing-border: rgba(255,255,255,0.08);
+  --color-landing-text: #f8fafc;
+  --color-landing-text-secondary: #94a3b8;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Prevent scroll on explorer/canvas screens, allow on landing */
+body.no-scroll {
+  overflow: hidden;
+}
+body.no-scroll #root {
+  overflow: hidden;
+}
+
+body {
+  background: #0a0a1a;
+  color: #e2e8f0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Fira Mono', 'Roboto Mono', monospace;
+}
+
+.font-heading {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes pulse-scale {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes processing-dot {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+@keyframes node-entrance {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes edge-draw {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-8px) scale(0.95); }
+}

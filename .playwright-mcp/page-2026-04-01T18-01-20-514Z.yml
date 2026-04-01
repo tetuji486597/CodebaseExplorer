@@ -1,0 +1,40 @@
+- generic [ref=e183]:
+  - generic [ref=e184]:
+    - generic [ref=e185]:
+      - generic [ref=e186]: 🧭
+      - generic [ref=e187]: Codebase Explorer
+      - generic [ref=e188]: 9 concepts
+    - generic [ref=e189]:
+      - button "Concepts" [ref=e190]
+      - button "Files" [ref=e191]
+    - button "New" [ref=e193]
+  - generic [ref=e201]:
+    - generic [ref=e202]:
+      - generic [ref=e205]:
+        - generic [ref=e206]: database.config.ts
+        - generic [ref=e207]:
+          - generic [ref=e290]: 🗄️
+          - text: Database
+      - button "✕" [ref=e208]
+    - generic [ref=e209]:
+      - paragraph [ref=e219]: Database configuration and connection setup. Initializes the database connection pool.
+      - generic [ref=e291]:
+        - generic [ref=e292]:
+          - generic [ref=e293]: Exports
+          - generic [ref=e294]: "3"
+        - generic [ref=e295]:
+          - generic [ref=e296]:
+            - text: DatabaseConfig
+            - paragraph [ref=e297]: Singleton class managing the PostgreSQL connection pool
+          - generic [ref=e298]:
+            - text: getConnection
+            - paragraph [ref=e299]: Acquires a client connection from the pool
+          - generic [ref=e300]:
+            - text: initializeDatabase
+            - paragraph [ref=e301]: Tests the database connection and logs success or failure
+      - generic [ref=e284]:
+        - button "Walk me through this file" [ref=e302]
+        - button "Ask Claude about this" [ref=e285]
+  - generic [ref=e198]:
+    - generic [ref=e199]: ✨
+    - textbox "Ask anything about this codebase..." [ref=e200]

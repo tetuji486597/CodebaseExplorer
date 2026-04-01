@@ -1,0 +1,39 @@
+- generic [ref=e228]:
+  - generic [ref=e229]:
+    - generic [ref=e230]:
+      - generic [ref=e231]: 🧭
+      - generic [ref=e232]: Codebase Explorer
+      - generic [ref=e233]: 9 concepts
+    - generic [ref=e234]:
+      - button "Concepts" [ref=e235]
+      - button "Files" [ref=e236]
+    - button "New" [ref=e238]
+  - generic [ref=e258]:
+    - generic [ref=e259]:
+      - generic [ref=e262]: auth.service.ts
+      - button "✕" [ref=e263]
+    - generic [ref=e264]:
+      - generic [ref=e312]:
+        - generic [ref=e313]: 🔑
+        - generic [ref=e314]: Sign In / Sign Up
+      - paragraph [ref=e272]: Business logic for authentication. Verifies credentials and manages user sessions.
+      - generic [ref=e315]:
+        - generic [ref=e316]: Exports
+        - generic [ref=e317]:
+          - generic [ref=e318]:
+            - text: AuthService
+            - paragraph [ref=e319]: Service class containing all authentication business logic
+          - generic [ref=e320]:
+            - text: authenticateUser
+            - paragraph [ref=e321]: Validates email and password then returns a signed JWT
+          - generic [ref=e322]:
+            - text: createUser
+            - paragraph [ref=e323]: Registers a new user after checking for duplicates
+          - generic [ref=e324]:
+            - text: verifyToken
+            - paragraph [ref=e325]: Decodes and validates a JWT token string
+      - button "Walk me through this file" [ref=e326]
+      - button "Ask Claude about this" [ref=e304]
+  - generic [ref=e243]:
+    - generic [ref=e244]: ✨
+    - textbox "Ask anything about this codebase..." [ref=e245]

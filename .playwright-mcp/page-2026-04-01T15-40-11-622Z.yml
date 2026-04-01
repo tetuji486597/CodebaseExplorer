@@ -1,0 +1,13 @@
+- generic [ref=e183]:
+  - generic [ref=e184]:
+    - generic [ref=e185]: 🧭
+    - heading "Codebase Explorer" [level=1] [ref=e186]
+  - generic [ref=e187]:
+    - generic [ref=e188] [cursor=pointer]:
+      - generic [ref=e189]: 📦
+      - heading "Drop your code. We'll make sense of it." [level=2] [ref=e190]
+      - paragraph [ref=e191]: Works with any language. No setup. No config.
+      - paragraph [ref=e192]: Drop a .zip file or click to browse
+    - generic [ref=e195]: or
+    - button "Try the demo — explore an Instagram clone" [ref=e197]
+  - paragraph [ref=e198]: Your code is processed securely. Analysis powered by Claude AI.

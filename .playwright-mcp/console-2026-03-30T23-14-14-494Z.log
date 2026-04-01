@@ -1,0 +1,2 @@
+[     924ms] ReferenceError: params is not defined
+    at http://localhost:5174/src/data/sampleData.js:364:28

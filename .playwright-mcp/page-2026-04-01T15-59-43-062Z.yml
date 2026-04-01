@@ -1,0 +1,23 @@
+- generic [ref=e229]:
+  - generic [ref=e230]:
+    - generic [ref=e231]:
+      - generic [ref=e232]: 🧭
+      - generic [ref=e233]: Codebase Explorer
+    - generic [ref=e234]:
+      - button "Concepts" [ref=e235]
+      - button "Files" [ref=e236]
+    - button "New" [ref=e238]
+  - generic [ref=e241]:
+    - generic [ref=e242]: →
+    - generic [ref=e243]: Start here — <UNKNOWN> is the heart of the app
+    - button "✕" [ref=e244]
+  - generic [ref=e248]:
+    - generic [ref=e249]: ✨
+    - textbox "Ask anything about this codebase..." [ref=e250]
+  - generic [ref=e252]:
+    - generic [ref=e257]: 🗺️
+    - heading "This is your concept map" [level=2] [ref=e258]
+    - paragraph [ref=e259]: Each bubble represents a part of the app. Colors group related features. Bigger bubbles mean more code is involved.
+    - generic [ref=e260]:
+      - button "Skip" [ref=e261]
+      - button "Next" [ref=e262]

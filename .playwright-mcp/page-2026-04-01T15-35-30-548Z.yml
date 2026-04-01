@@ -1,0 +1,12 @@
+- generic [ref=e227]:
+  - generic [ref=e228]:
+    - generic [ref=e229]:
+      - generic [ref=e230]: 🧭
+      - generic [ref=e231]: Codebase Explorer
+    - generic [ref=e232]:
+      - button "Concepts" [ref=e233]
+      - button "Files" [ref=e234]
+    - button "New" [ref=e236]
+  - generic [ref=e241]:
+    - generic [ref=e242]: ✨
+    - textbox "Ask anything about this codebase..." [ref=e243]
