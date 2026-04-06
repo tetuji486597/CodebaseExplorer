@@ -1,4 +1,5 @@
-const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || '/api/claude';
+import { API_BASE } from '../lib/api';
+const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || `${API_BASE}/api/claude`;
 const ENABLE_UPLOAD = import.meta.env.VITE_ENABLE_UPLOAD === 'true';
 
 export async function analyzeCodebase(fileTree, fileContents, importEdges) {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
 import { CheckCircle2, ArrowRight, Sparkles, Compass } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
 export default function CompletionSummary() {
   const navigate = useNavigate();
@@ -23,11 +24,11 @@ export default function CompletionSummary() {
     const fetchSummary = async () => {
       try {
         // Get the curated codebase name
-        const cbRes = await fetch(`/api/curated/${curatedId}`);
+        const cbRes = await fetch(`${API_BASE}/api/curated/${curatedId}`);
         const codebase = await cbRes.json();
 
         // Get skill profile to find new concepts
-        const profileRes = await fetch('/api/skill-profile?userId=anonymous');
+        const profileRes = await fetch(`${API_BASE}/api/skill-profile?userId=anonymous`);
         const profile = await profileRes.json();
 
         // Find concepts with few encounters (likely new from this session)
@@ -41,7 +42,7 @@ export default function CompletionSummary() {
         });
 
         // Find next recommended codebase
-        const allRes = await fetch('/api/curated');
+        const allRes = await fetch(`${API_BASE}/api/curated`);
         const allCodebases = await allRes.json();
 
         // Find lowest-confidence universal concepts

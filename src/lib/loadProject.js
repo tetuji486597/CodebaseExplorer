@@ -1,4 +1,5 @@
 import useStore from '../store/useStore';
+import { API_BASE } from './api';
 
 /**
  * Fetch project data from the API, transform it into store format, and load it.
@@ -6,7 +7,7 @@ import useStore from '../store/useStore';
  */
 export async function fetchAndLoadProject(projectId) {
   try {
-    const res = await fetch(`/api/pipeline/${projectId}/data`);
+    const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
     if (!res.ok) return null;
     const data = await res.json();
     return loadProjectData(data, projectId);

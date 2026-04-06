@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
 import { ArrowLeft, ExternalLink, BookOpen, Zap, Flame } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
 const DIFFICULTY_CONFIG = {
   beginner: {
@@ -36,7 +37,7 @@ export default function CuratedLibrary() {
   const setProjectId = useStore(s => s.setProjectId);
 
   useEffect(() => {
-    fetch('/api/curated')
+    fetch(`${API_BASE}/api/curated`)
       .then(res => res.json())
       .then(data => {
         setCodebases(data);
@@ -50,7 +51,7 @@ export default function CuratedLibrary() {
 
     try {
       // Load the curated codebase (creates a project record)
-      const loadRes = await fetch(`/api/curated/${codebase.id}/load`, { method: 'POST' });
+      const loadRes = await fetch(`${API_BASE}/api/curated/${codebase.id}/load`, { method: 'POST' });
       const { projectId } = await loadRes.json();
       // Store curated codebase ID for engagement tracking
       localStorage.setItem('cbe_curated_id', codebase.id);

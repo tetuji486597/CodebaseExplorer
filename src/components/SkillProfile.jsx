@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { ArrowLeft, Circle, Layers, Server, Database, Settings } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
 const CATEGORY_CONFIG = {
   frontend: { label: 'Frontend', Icon: Layers, color: '#6366f1' },
@@ -74,7 +75,7 @@ export default function SkillProfile() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/skill-profile?userId=anonymous')
+    fetch(`${API_BASE}/api/skill-profile?userId=anonymous`)
       .then(res => res.json())
       .then(data => {
         setProfile(data);

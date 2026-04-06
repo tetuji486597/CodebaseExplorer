@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
+import { API_BASE } from '../lib/api';
 
 const LANGUAGE_COLORS = {
   JavaScript: '#f1e05a', TypeScript: '#3178c6', Python: '#3572A5',
@@ -80,7 +81,7 @@ export default function RepoSelectScreen() {
     setProcessingStatus('Downloading repository from GitHub...');
 
     try {
-      const res = await fetch('/api/github/analyze', {
+      const res = await fetch(`${API_BASE}/api/github/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoFullName: repo.full_name, accessToken: token }),
@@ -102,7 +103,7 @@ export default function RepoSelectScreen() {
   };
 
   const listenToPipeline = (projectId) => {
-    const eventSource = new EventSource(`/api/pipeline/${projectId}/stream`);
+    const eventSource = new EventSource(`${API_BASE}/api/pipeline/${projectId}/stream`);
 
     eventSource.addEventListener('progress', (e) => {
       const data = JSON.parse(e.data);
@@ -134,7 +135,7 @@ export default function RepoSelectScreen() {
 
   const checkAndLoadProject = async (projectId) => {
     try {
-      const res = await fetch(`/api/pipeline/${projectId}/data`);
+      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
       const data = await res.json();
       if (data.concepts && data.concepts.length > 0) {
         transformAndLoad(data);
@@ -144,7 +145,7 @@ export default function RepoSelectScreen() {
 
   const loadProjectData = async (projectId) => {
     try {
-      const res = await fetch(`/api/pipeline/${projectId}/data`);
+      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
       const data = await res.json();
       transformAndLoad(data);
     } catch (err) {

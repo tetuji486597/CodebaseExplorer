@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
 import KeywordHighlighter from './KeywordHighlighter';
+import { API_BASE } from '../lib/api';
 
 
 // Simple syntax highlighting
@@ -41,7 +42,7 @@ export default function CodePanel() {
       setExplanation(null);
       (async () => {
         try {
-          const res = await fetch('/api/explain', {
+          const res = await fetch(`${API_BASE}/api/explain`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projectId, filePath: file.id, userLevel: 'beginner' }),
@@ -98,7 +99,7 @@ export default function CodePanel() {
     }
     (async () => {
       try {
-        const res = await fetch(`/api/pipeline/${projectId}/file-content?path=${encodeURIComponent(file.id)}`);
+        const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/file-content?path=${encodeURIComponent(file.id)}`);
         if (res.ok) {
           const data = await res.json();
           setFileContent(data.content);
@@ -119,7 +120,7 @@ export default function CodePanel() {
 
     if (projectId) {
       try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch(`${API_BASE}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import useStore from '../store/useStore';
+import { API_BASE } from '../lib/api';
 
 const PROACTIVE_INTERVAL = 15000; // Check every 15 seconds
 
@@ -20,7 +21,7 @@ export default function useProactive() {
     if (!projectId) return;
 
     try {
-      const res = await fetch('/api/proactive', {
+      const res = await fetch(`${API_BASE}/api/proactive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId }),

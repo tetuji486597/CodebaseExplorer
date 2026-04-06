@@ -15,7 +15,9 @@ import skillProfileRoutes from './routes/skill-profile.js';
 
 const app = new Hono();
 
-app.use('*', cors());
+app.use('*', cors({
+  origin: process.env.CORS_ORIGIN || '*',
+}));
 app.use('*', logger());
 
 // Health check

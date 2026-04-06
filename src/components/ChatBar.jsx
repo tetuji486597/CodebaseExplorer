@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import useStore from '../store/useStore';
 import { Send, ChevronDown, MessageSquare } from 'lucide-react';
+import { API_BASE } from '../lib/api';
 
 export default function ChatBar() {
   const [input, setInput] = useState('');
@@ -29,7 +30,7 @@ export default function ChatBar() {
 
     if (projectId) {
       try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch(`${API_BASE}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

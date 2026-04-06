@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import useStore from '../store/useStore';
 import useUserState from '../hooks/useUserState';
+import { API_BASE } from '../lib/api';
 import { CONCEPT_COLORS } from '../data/sampleData';
 import {
   X, ChevronRight, FileCode2, ArrowRight, ArrowLeft,
@@ -90,7 +91,7 @@ export default function InspectorPanel() {
       setLoadingExplanation(true);
       setStreamingExplanation('');
       try {
-        const res = await fetch('/api/explain', {
+        const res = await fetch(`${API_BASE}/api/explain`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectId, conceptKey: selectedNode.id, userLevel: activeLevel }),

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
 import { sampleConcepts, sampleFiles, sampleEdges, sampleFileImports } from '../data/sampleData';
 import { parseZipFile, extractImports, resolveImportPaths } from '../utils/fileParser';
+import { API_BASE } from '../lib/api';
 import { fetchAndLoadProject } from '../lib/loadProject';
 
 export default function UploadScreen() {
@@ -65,7 +66,7 @@ export default function UploadScreen() {
       setProcessingStatus('Starting analysis pipeline...');
 
       // Send to backend pipeline
-      const response = await fetch('/api/pipeline/start', {
+      const response = await fetch(`${API_BASE}/api/pipeline/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,7 +92,7 @@ export default function UploadScreen() {
 
   const listenToPipeline = (projectId, retryCount = 0) => {
     const maxRetries = 10;
-    const eventSource = new EventSource(`/api/pipeline/${projectId}/stream`);
+    const eventSource = new EventSource(`${API_BASE}/api/pipeline/${projectId}/stream`);
 
     eventSource.addEventListener('progress', (e) => {
       const data = JSON.parse(e.data);

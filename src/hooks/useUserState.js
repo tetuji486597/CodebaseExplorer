@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import useStore from '../store/useStore';
+import { API_BASE } from '../lib/api';
 
 const SYNC_INTERVAL = 5000; // 5 seconds
 
@@ -25,7 +26,7 @@ export default function useUserState() {
     const curatedId = localStorage.getItem('cbe_curated_id');
     if (curatedId) body.curatedCodebaseId = curatedId;
 
-    fetch('/api/skill-profile/engage', {
+    fetch(`${API_BASE}/api/skill-profile/engage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -91,7 +92,7 @@ export default function useUserState() {
       pendingRef.current = {};
 
       try {
-        await fetch('/api/user-state', {
+        await fetch(`${API_BASE}/api/user-state`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectId, ...updates }),
