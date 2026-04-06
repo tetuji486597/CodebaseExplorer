@@ -5,6 +5,7 @@ import { runDepthMapping } from './depthMapping.js';
 import { runInsightGeneration } from './insightGeneration.js';
 import { runEmbedding } from './embedding.js';
 import { runProactiveSeeding } from './proactiveSeeding.js';
+import { runConceptMapping } from './conceptMapping.js';
 
 export interface PipelineInput {
   fileTree: any;
@@ -54,31 +55,43 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
       await supabase.from('files').insert(fileRows.slice(i, i + 50));
     }
 
+    // Filter out low-value files from AI analysis (still stored in DB above)
+    const analysisContents = filterForAnalysis(input.fileContents);
+    console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
+
     // Stage 2: Parallel file analysis
-    await updateProgress(projectId, 2, 'Analyzing files...');
-    const fileAnalyses = await runFileAnalysis(projectId, input.fileContents, framework, input.fileTree);
+    await updateProgress(projectId, 2, 'Analyzing file structure and dependencies...');
+    const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
 
     // Stage 3: Concept synthesis
-    await updateProgress(projectId, 3, 'Synthesizing concepts...');
+    await updateProgress(projectId, 3, 'Identifying architectural concepts...');
     const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
 
-    // Stage 4 & 5 run in parallel (background enrichment)
-    await updateProgress(projectId, 4, 'Adding depth and insights...');
-    await Promise.all([
-      runDepthMapping(projectId, synthesis, fileAnalyses),
-      runInsightGeneration(projectId, synthesis, fileAnalyses),
-    ]);
+    // Stage 4: Depth mapping (runs first to avoid rate limit contention)
+    await updateProgress(projectId, 4, 'Generating multi-level explanations...');
+    await runDepthMapping(projectId, synthesis, fileAnalyses);
 
-    // Stage 6: Embedding & indexing
-    await updateProgress(projectId, 6, 'Indexing for search...');
-    await runEmbedding(projectId, input.fileContents, fileAnalyses, synthesis);
+    // Stage 5: Insight generation (sequential to avoid rate limits)
+    await updateProgress(projectId, 5, 'Generating architecture insights...');
+    await runInsightGeneration(projectId, synthesis, fileAnalyses);
 
-    // Stage 7: Proactive seeding
-    await updateProgress(projectId, 7, 'Generating exploration path...');
+    // Stage 6: Proactive seeding (moved before embedding so UI loads sooner)
+    await updateProgress(projectId, 6, 'Building your learning path...');
     await runProactiveSeeding(projectId, synthesis);
 
-    await updateProgress(projectId, 7, 'Pipeline complete!', 'complete');
+    // Stage 6.5: Map concepts to universal taxonomy (fast, non-blocking)
+    await runConceptMapping(projectId).catch((err) => {
+      console.error(`Concept mapping failed for project ${projectId}:`, err);
+    });
+
+    // Mark pipeline complete — UI can load now
+    await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
     console.log(`Pipeline complete for project ${projectId}`);
+
+    // Stage 7: Embedding & indexing (runs in background, not blocking UI)
+    runEmbedding(projectId, input.fileContents, fileAnalyses, synthesis).catch((err) => {
+      console.error(`Background embedding failed for project ${projectId}:`, err);
+    });
   } catch (err) {
     console.error(`Pipeline failed for project ${projectId}:`, err);
     await supabase
@@ -149,4 +162,46 @@ function detectLanguage(fileContents: Record<string, string>): string {
     if (langMap[ext]) return langMap[ext];
   }
   return 'Unknown';
+}
+
+const SKIP_FILENAMES = new Set([
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  'Cargo.lock', 'poetry.lock', 'Gemfile.lock', 'composer.lock',
+  'LICENSE', 'LICENSE.md', 'CHANGELOG', 'CHANGELOG.md',
+  '.env.example', '.env.sample',
+  'index.html',
+]);
+
+const SKIP_EXTENSIONS = [
+  '.min.js', '.min.css', '.map', '.ico', '.lock',
+];
+
+const SKIP_CONFIG_PATTERNS = [
+  /\.config\.(js|ts|mjs|cjs)$/,
+  /\.config\.(json)$/,
+  /^postcss\.config/,
+  /^tailwind\.config/,
+  /^vite\.config/,
+  /^eslint\.config/,
+  /^prettier\.config/,
+  /^jest\.config/,
+  /^vitest\.config/,
+  /^babel\.config/,
+  /^webpack\.config/,
+  /^tsconfig.*\.json$/,
+];
+
+function filterForAnalysis(fileContents: Record<string, string>): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [path, content] of Object.entries(fileContents)) {
+    const fileName = path.split('/').pop() || '';
+    if (SKIP_FILENAMES.has(fileName)) continue;
+    if (SKIP_EXTENSIONS.some((ext) => fileName.endsWith(ext))) continue;
+    if (fileName.endsWith('.d.ts')) continue;
+    if (SKIP_CONFIG_PATTERNS.some((pattern) => pattern.test(fileName))) continue;
+    // Skip very long SVGs (likely generated/icons)
+    if (fileName.endsWith('.svg') && content.length > 2000) continue;
+    filtered[path] = content;
+  }
+  return filtered;
 }

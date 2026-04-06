@@ -1,9 +1,18 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
 
 const useStore = create((set, get) => ({
-  // App state
-  screen: 'landing', // 'landing' | 'upload' | 'processing' | 'explorer'
-  setScreen: (screen) => set({ screen }),
+  // Auth state
+  user: null,
+  session: null,
+  authLoading: true,
+  setUser: (user) => set({ user }),
+  setSession: (session) => set({ session }),
+  setAuthLoading: (loading) => set({ authLoading: loading }),
+  signOut: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, session: null });
+  },
 
   // View mode
   viewMode: 'concepts', // 'concepts' | 'files'
@@ -111,9 +120,56 @@ const useStore = create((set, get) => ({
   userState: null,
   setUserState: (state) => set({ userState: state }),
 
+  // Guided tour mode
+  guidedMode: false,
+  guidedPosition: 0,
+  explorationPath: [],
+  setGuidedMode: (active) => set({ guidedMode: active }),
+  setGuidedPosition: (pos) => set({ guidedPosition: pos }),
+  setExplorationPath: (path) => set({ explorationPath: path }),
+  advanceGuided: () => {
+    const { guidedPosition, explorationPath, markConceptExplored } = get();
+    if (guidedPosition >= explorationPath.length - 1) return;
+    markConceptExplored(explorationPath[guidedPosition]);
+    const next = guidedPosition + 1;
+    set({
+      guidedPosition: next,
+      selectedNode: { type: 'concept', id: explorationPath[next] },
+      showInspector: false,
+    });
+  },
+  retreatGuided: () => {
+    const { guidedPosition, explorationPath } = get();
+    if (guidedPosition <= 0) return;
+    const prev = guidedPosition - 1;
+    set({
+      guidedPosition: prev,
+      selectedNode: { type: 'concept', id: explorationPath[prev] },
+      showInspector: false,
+    });
+  },
+  exitGuidedMode: () => set({ guidedMode: false }),
+  enterGuidedMode: () => {
+    const { guidedPosition, explorationPath } = get();
+    if (!explorationPath.length) return;
+    set({
+      guidedMode: true,
+      selectedNode: { type: 'concept', id: explorationPath[guidedPosition] },
+      showInspector: false,
+    });
+  },
+
   // Insights
   insights: [],
   setInsights: (insights) => set({ insights }),
+
+  // Origin context (how codebase was created)
+  originContext: null, // 'self_built' | 'ai_built' | 'someone_else'
+  setOriginContext: (ctx) => set({ originContext: ctx }),
+
+  // Curated codebase tracking
+  curatedCodebaseId: null,
+  setCuratedCodebaseId: (id) => set({ curatedCodebaseId: id }),
 
   // Helpers
   getConceptById: (id) => get().concepts.find(c => c.id === id),

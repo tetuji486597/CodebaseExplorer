@@ -4,29 +4,30 @@ import { Map, MousePointerClick, MessageSquare } from 'lucide-react';
 
 const STEPS = [
   {
-    title: 'This is your concept map',
-    description: 'Each bubble represents a part of the app. Colors group related features. Bigger bubbles mean more code is involved.',
+    title: 'This is the architecture map',
+    description: 'Each bubble represents an architectural concept — think controllers, models, services, or UI components. Colors group related modules. Bigger bubbles mean more files are involved.',
     Icon: Map,
     color: '#6366f1',
   },
   {
-    title: 'Tap any bubble',
-    description: 'Select a concept or file to see what it does, which files it contains, and how it connects to everything else.',
+    title: 'Click any concept',
+    description: 'Select a concept to see what it does, which files implement it, what design patterns are at play, and how it connects to the rest of the system.',
     Icon: MousePointerClick,
     color: '#10b981',
   },
   {
     title: 'Ask anything',
-    description: 'Use the chat bar at the bottom to ask questions about the codebase in plain English. No coding knowledge required.',
+    description: "Use the chat bar to ask questions — 'What pattern does the auth module use?', 'How does data flow from the API to the UI?', or anything else about the codebase.",
     Icon: MessageSquare,
     color: '#8b5cf6',
   },
 ];
 
 export default function Onboarding() {
-  const { showOnboarding, onboardingStep, setOnboardingStep, dismissOnboarding } = useStore();
+  const { showOnboarding, onboardingStep, setOnboardingStep, dismissOnboarding, explorationPath } = useStore();
 
-  if (!showOnboarding) return null;
+  // Guided tour replaces onboarding
+  if (!showOnboarding || explorationPath.length > 0) return null;
 
   const step = STEPS[onboardingStep];
   const isLast = onboardingStep === STEPS.length - 1;

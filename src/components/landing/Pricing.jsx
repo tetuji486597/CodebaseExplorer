@@ -3,12 +3,12 @@ import AnimatedSection from './AnimatedSection';
 
 const tiers = [
   {
-    name: 'Explorer', tagline: 'For individuals and small projects', price: 'Free', priceNote: null,
+    name: 'Student', tagline: 'For class projects and learning', price: 'Free', priceNote: null,
     features: ['5 codebases/month', 'Concept map + files view', 'Ask Claude (10 questions/day)', 'Community support'],
     cta: 'Get started free', primary: false,
   },
   {
-    name: 'Pro', tagline: 'For teams and power users', price: '$12', priceNote: '/month',
+    name: 'Pro', tagline: 'For power learners and TAs', price: '$12', priceNote: '/month',
     features: ['Unlimited codebases', 'Full AI analysis', 'Unlimited Claude chat', 'Priority support', 'Team sharing (coming soon)'],
     cta: 'Start free trial', primary: true,
   },

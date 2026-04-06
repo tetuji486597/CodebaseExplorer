@@ -2,9 +2,9 @@ import { motion } from 'framer-motion';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const testimonials = [
-  { q: "I used Cursor to build my SaaS and had no clue what half the files did. This tool finally made it click.", name: 'Sarah K.', role: 'Indie Founder', initials: 'SK', bg: '#06b6d4' },
-  { q: "We cut our developer onboarding time from 3 weeks to 2 days. The concept map is a game-changer.", name: 'Marcus R.', role: 'Engineering Lead', initials: 'MR', bg: '#8b5cf6' },
-  { q: "I'm not a developer at all. I was able to understand our entire codebase in 20 minutes. That's never happened before.", name: 'Priya T.', role: 'Product Manager', initials: 'PT', bg: '#f59e0b' },
+  { q: "My data structures class taught me linked lists, but I had no idea how a real app organizes its code. This tool connected the dots between what I learned in class and how production software actually works.", name: 'Jason M.', role: 'CS Junior, UC San Diego', initials: 'JM', bg: '#06b6d4' },
+  { q: "I use this with my Software Engineering students. They upload their group projects and can immediately see architectural issues I'd normally spend office hours explaining.", name: 'Dr. Amara L.', role: 'CS Professor', initials: 'AL', bg: '#8b5cf6' },
+  { q: "I was trying to contribute to an open-source project but the codebase was huge. This showed me the overall architecture and I found where to make my first PR in like 15 minutes.", name: 'Kevin P.', role: 'CS Sophomore, Georgia Tech', initials: 'KP', bg: '#f59e0b' },
 ];
 
 export default function Testimonials() {
@@ -14,7 +14,7 @@ export default function Testimonials() {
         fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
         textAlign: 'center', marginBottom: '3.5rem', color: '#f8fafc',
       }}>
-        What people are saying
+        What students and professors are saying
       </h2>
       <motion.div
         variants={staggerContainer}

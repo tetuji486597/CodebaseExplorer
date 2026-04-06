@@ -51,7 +51,7 @@ Dependencies: ${(f.depends_on || []).join(', ')}`
   const allPaths = fileAnalyses.map((f) => f.path);
 
   const raw = await callClaudeStructured<any>({
-    system: `You are synthesizing a concept map from file analyses. Create meaningful concepts that group related files.
+    system: `You are synthesizing an architecture map from file analyses for CS students learning software architecture. Create meaningful architectural concepts that group related files. Name concepts using proper CS/software engineering terminology where applicable (e.g., "Authentication Middleware", "REST API Layer", "State Management", "Data Access Layer") rather than generic labels. For the "metaphor" field, relate concepts to CS fundamentals the student already knows (e.g., "Think of this like the observer pattern — but applied at the module level"). For "explanation", use CS terminology they know (classes, interfaces, APIs, HTTP) but explain architectural concepts they may not know yet (dependency injection, middleware pipelines, service layers).
 
 You MUST return a JSON object with EXACTLY these fields:
 {
@@ -85,7 +85,7 @@ ${analysisText}
 Create a concept map with 3-20 concepts (scale with complexity). Every file must belong to exactly one concept. Use the exact JSON field names shown in the system prompt.`,
     schema: conceptSynthesisSchema,
     schemaName: 'concept_synthesis',
-    maxTokens: 8000,
+    maxTokens: Math.min(16000, Math.max(8000, fileAnalyses.length * 200)),
   });
 
   console.log(`Concept synthesis raw response keys: ${Object.keys(raw)}, concepts: ${raw.concepts?.length}, edges: ${raw.edges?.length}`);
@@ -118,47 +118,51 @@ Create a concept map with 3-20 concepts (scale with complexity). Every file must
     codebase_summary: raw.codebase_summary || raw.codebaseSummary || raw.summary || '',
   };
 
-  // Store concepts
+  // Store concepts (batch insert)
   console.log(`Storing ${result.concepts.length} concepts for project ${projectId}`);
-  for (const concept of result.concepts) {
-    const { error: conceptError } = await supabase.from('concepts').insert({
-      project_id: projectId,
-      concept_key: concept.id,
-      name: concept.name,
-      emoji: concept.emoji,
-      color: concept.color,
-      metaphor: concept.metaphor,
-      one_liner: concept.one_liner,
-      explanation: concept.explanation,
-      deep_explanation: concept.deep_explanation,
-      importance: concept.importance,
-    });
-    if (conceptError) {
-      console.error(`Failed to insert concept ${concept.id}:`, conceptError);
-    }
+  const conceptRows = result.concepts.map((concept) => ({
+    project_id: projectId,
+    concept_key: concept.id,
+    name: concept.name,
+    emoji: concept.emoji,
+    color: concept.color,
+    metaphor: concept.metaphor,
+    one_liner: concept.one_liner,
+    explanation: concept.explanation,
+    deep_explanation: concept.deep_explanation,
+    importance: concept.importance,
+  }));
+  const { error: conceptsError } = await supabase.from('concepts').insert(conceptRows);
+  if (conceptsError) {
+    console.error('Failed to batch insert concepts:', conceptsError);
+  }
 
-    // Update files with concept_id
-    for (const filePath of concept.file_ids) {
-      await supabase
+  // Update files with concept_id (batch via Promise.all)
+  const fileUpdatePromises = result.concepts.flatMap((concept) =>
+    concept.file_ids.map((filePath) =>
+      supabase
         .from('files')
         .update({ concept_id: concept.id })
         .eq('project_id', projectId)
-        .eq('path', filePath);
-    }
-  }
+        .eq('path', filePath)
+    )
+  );
+  await Promise.all(fileUpdatePromises);
 
-  // Store edges
-  for (const edge of result.edges) {
-    if (!edge.source || !edge.target) continue;
-    const { error: edgeError } = await supabase.from('concept_edges').insert({
+  // Store edges (batch insert)
+  const edgeRows = result.edges
+    .filter((edge) => edge.source && edge.target)
+    .map((edge) => ({
       project_id: projectId,
       source_concept_key: edge.source,
       target_concept_key: edge.target,
       relationship: edge.relationship,
       strength: edge.strength,
-    });
-    if (edgeError) {
-      console.error(`Failed to insert edge ${edge.source}->${edge.target}:`, edgeError);
+    }));
+  if (edgeRows.length > 0) {
+    const { error: edgesError } = await supabase.from('concept_edges').insert(edgeRows);
+    if (edgesError) {
+      console.error('Failed to batch insert edges:', edgesError);
     }
   }
 

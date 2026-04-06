@@ -67,21 +67,23 @@ export async function runFileAnalysis(
       );
     }
 
-    // Wait 60s between batches to let rate limit window reset
+    // Small delay between batches to avoid burst rate limits
     if (i < batches.length - 1) {
-      console.log('Waiting 60s for rate limit reset...');
-      await new Promise((r) => setTimeout(r, 60000));
+      console.log('Short delay between batches...');
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
-  // Store analyses in files table
-  for (const analysis of allAnalyses) {
-    await supabase
-      .from('files')
-      .update({ analysis: analysis as any })
-      .eq('project_id', projectId)
-      .eq('path', analysis.path);
-  }
+  // Store analyses in files table (batch via Promise.all)
+  await Promise.all(
+    allAnalyses.map((analysis) =>
+      supabase
+        .from('files')
+        .update({ analysis: analysis as any })
+        .eq('project_id', projectId)
+        .eq('path', analysis.path)
+    )
+  );
 
   return allAnalyses;
 }

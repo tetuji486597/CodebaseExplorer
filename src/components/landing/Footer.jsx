@@ -13,7 +13,7 @@ export default function Footer() {
       }}>
         <div>
           <div style={{ fontWeight: 600, marginBottom: '.5rem', color: '#f8fafc' }}>🧭 Codebase Explorer</div>
-          <p style={{ color: '#64748b', fontSize: '.85rem' }}>Made for humans who don't speak code.</p>
+          <p style={{ color: '#64748b', fontSize: '.85rem' }}>Learn software architecture by exploring real codebases.</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
           <div style={{ fontWeight: 600, marginBottom: '.25rem', fontSize: '.9rem', color: '#94a3b8' }}>Product</div>

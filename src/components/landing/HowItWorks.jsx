@@ -2,9 +2,9 @@ import { motion } from 'framer-motion';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const steps = [
-  { num: '01', emoji: '📤', title: 'Upload', desc: 'Drop a .zip of any codebase. Or try our demo instantly.' },
-  { num: '02', emoji: '✨', title: 'AI Analyzes', desc: 'Claude reads your code and extracts concepts, relationships, and plain-English descriptions.' },
-  { num: '03', emoji: '🧭', title: 'Explore', desc: 'Interactive visual map. Tap any bubble. Ask any question. Understand everything.' },
+  { num: '01', emoji: '📤', title: 'Upload', desc: 'Drop a .zip of any codebase — a class project, an open-source repo, or a tutorial you want to reverse-engineer.' },
+  { num: '02', emoji: '✨', title: 'AI Analyzes', desc: 'Claude reads the source code and extracts architectural concepts, design patterns, and module relationships.' },
+  { num: '03', emoji: '🧭', title: 'Explore', desc: 'Interactive architecture map. Click any node to see how it works, what patterns it uses, and how it connects to the rest of the system.' },
 ];
 
 export default function HowItWorks() {
@@ -14,7 +14,7 @@ export default function HowItWorks() {
         fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
         textAlign: 'center', marginBottom: '3.5rem', color: '#f8fafc',
       }}>
-        From zip file to clarity in 3 steps
+        From zip file to architecture diagram in 3 steps
       </h2>
       <motion.div
         className="lp-steps"

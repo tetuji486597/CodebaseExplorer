@@ -13,6 +13,25 @@ export default function useUserState() {
   const pendingRef = useRef({});
   const conceptTimerRef = useRef({ concept: null, start: 0 });
 
+  // Fire engagement signal to skill profile
+  const fireEngagement = useCallback((conceptKey, engagementType) => {
+    const storeState = useStore.getState();
+    const body = {
+      userId: 'anonymous',
+      projectId: storeState.projectId,
+      conceptKey,
+      engagementType,
+    };
+    const curatedId = localStorage.getItem('cbe_curated_id');
+    if (curatedId) body.curatedCodebaseId = curatedId;
+
+    fetch('/api/skill-profile/engage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }, []);
+
   // Track concept view time
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'concept') {
@@ -25,6 +44,10 @@ export default function useUserState() {
             ...prev,
             [conceptTimerRef.current.concept]: (prev[conceptTimerRef.current.concept] || 0) + elapsed,
           };
+          // Fire engagement for time spent (20+ seconds counts)
+          if (elapsed >= 20) {
+            fireEngagement(conceptTimerRef.current.concept, 'time_spent');
+          }
         }
         conceptTimerRef.current = { concept: null, start: 0 };
       }
@@ -38,7 +61,10 @@ export default function useUserState() {
     const explored = new Set([...(userState?.explored_concepts || []), ...(pendingRef.current.explored_concepts || [])]);
     explored.add(selectedNode.id);
     pendingRef.current.explored_concepts = Array.from(explored);
-  }, [selectedNode, userState]);
+
+    // Fire click engagement
+    fireEngagement(selectedNode.id, 'click');
+  }, [selectedNode, userState, fireEngagement]);
 
   // Estimate understanding level
   const estimateLevel = useCallback((conceptKey) => {
@@ -94,5 +120,5 @@ export default function useUserState() {
     pendingRef.current.insights_seen = Array.from(seen);
   }, [userState]);
 
-  return { estimateLevel, trackFileView, markInsightSeen };
+  return { estimateLevel, trackFileView, markInsightSeen, fireEngagement };
 }

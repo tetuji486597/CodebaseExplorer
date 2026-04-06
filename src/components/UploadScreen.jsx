@@ -1,13 +1,30 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
 import { sampleConcepts, sampleFiles, sampleEdges, sampleFileImports } from '../data/sampleData';
 import { parseZipFile, extractImports, resolveImportPaths } from '../utils/fileParser';
+import { fetchAndLoadProject } from '../lib/loadProject';
 
 export default function UploadScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
-  const { setScreen, loadData, setProcessingStatus, setProjectId } = useStore();
+  const { loadData, setProcessingStatus, setProjectId } = useStore();
+  const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const mountedRef = useRef(false);
+
+  // On mount, check for an in-progress pipeline and resume listening
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    const savedProjectId = localStorage.getItem('cbe_active_project');
+    if (savedProjectId) {
+      navigate('/processing', { replace: true });
+      setProcessingStatus('Reconnecting to pipeline...');
+      setProjectId(savedProjectId);
+      listenToPipeline(savedProjectId);
+    }
+  }, []);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
@@ -33,7 +50,7 @@ export default function UploadScreen() {
   }, []);
 
   const handleFileUpload = async (file) => {
-    setScreen('processing');
+    navigate('/processing', { replace: true });
     setProcessingStatus('Reading your files...');
 
     try {
@@ -61,6 +78,8 @@ export default function UploadScreen() {
 
       const { projectId } = await response.json();
       setProjectId(projectId);
+      localStorage.setItem('cbe_active_project', projectId);
+      localStorage.removeItem('cbe_curated_id'); // Clear stale curated context
 
       // Start listening to pipeline progress via SSE
       listenToPipeline(projectId);
@@ -70,7 +89,8 @@ export default function UploadScreen() {
     }
   };
 
-  const listenToPipeline = (projectId) => {
+  const listenToPipeline = (projectId, retryCount = 0) => {
+    const maxRetries = 10;
     const eventSource = new EventSource(`/api/pipeline/${projectId}/stream`);
 
     eventSource.addEventListener('progress', (e) => {
@@ -86,100 +106,47 @@ export default function UploadScreen() {
 
       // Only transition when pipeline is fully complete
       if (status === 'complete') {
+        localStorage.removeItem('cbe_active_project');
         loadProjectData(projectId);
         eventSource.close();
       }
 
       if (status === 'failed') {
+        localStorage.removeItem('cbe_active_project');
         setProcessingStatus('Pipeline failed. Please try again.');
         eventSource.close();
       }
     });
 
     eventSource.onerror = () => {
-      // Poll for final status after SSE closes
-      setTimeout(() => checkAndLoadProject(projectId), 2000);
       eventSource.close();
+      if (retryCount < maxRetries) {
+        const delay = Math.min(2000 * Math.pow(1.5, retryCount), 15000);
+        setProcessingStatus('Connection lost, reconnecting...');
+        setTimeout(() => listenToPipeline(projectId, retryCount + 1), delay);
+      } else {
+        // Exhausted retries — try to load final state
+        checkAndLoadProject(projectId);
+      }
     };
   };
 
   const checkAndLoadProject = async (projectId) => {
-    try {
-      const res = await fetch(`/api/pipeline/${projectId}/data`);
-      const data = await res.json();
-      if (data.concepts && data.concepts.length > 0) {
-        transformAndLoad(data);
-      }
-    } catch {}
+    const result = await fetchAndLoadProject(projectId);
+    if (result) navigate('/explorer', { replace: true });
   };
 
   const loadProjectData = async (projectId) => {
-    try {
-      const res = await fetch(`/api/pipeline/${projectId}/data`);
-      const data = await res.json();
-      transformAndLoad(data);
-    } catch (err) {
-      console.error('Failed to load project data:', err);
+    const result = await fetchAndLoadProject(projectId);
+    if (result) {
+      navigate('/explorer', { replace: true });
+    } else {
+      console.error('Failed to load project data');
     }
-  };
-
-  const transformAndLoad = (data) => {
-    // Transform Supabase data to match existing store format
-    const concepts = (data.concepts || []).map(c => ({
-      id: c.concept_key,
-      name: c.name,
-      emoji: c.emoji,
-      color: c.color,
-      description: c.explanation,
-      metaphor: c.metaphor,
-      one_liner: c.one_liner,
-      deep_explanation: c.deep_explanation,
-      beginner_explanation: c.beginner_explanation,
-      intermediate_explanation: c.intermediate_explanation,
-      advanced_explanation: c.advanced_explanation,
-      importance: c.importance,
-      fileIds: (data.files || []).filter(f => f.concept_id === c.concept_key).map(f => f.path),
-    }));
-
-    const files = (data.files || []).map(f => ({
-      id: f.path,
-      name: f.name,
-      conceptId: f.concept_id,
-      description: f.analysis?.purpose || '',
-      exports: (f.analysis?.key_exports || []).map(e => ({
-        name: e.name,
-        whatItDoes: e.what_it_does || '',
-      })),
-      codeSnippet: '', // Don't send full code to frontend
-      role: f.role,
-    }));
-
-    const conceptEdges = (data.edges || []).map(e => ({
-      source: e.source_concept_key,
-      target: e.target_concept_key,
-      label: e.relationship,
-      strength: e.strength,
-      explanation: e.explanation,
-    }));
-
-    if (data.insights) {
-      useStore.getState().setInsights(data.insights);
-    }
-    if (data.userState) {
-      useStore.getState().setUserState(data.userState);
-    }
-
-    loadData({
-      concepts,
-      files,
-      conceptEdges,
-      fileImports: [],
-    });
-    setScreen('explorer');
   };
 
   const loadDemo = () => {
-    setScreen('processing');
+    navigate('/processing', { replace: true });
     setProcessingStatus('Loading demo...');
     setTimeout(() => setProcessingStatus('Finding the concepts...'), 800);
     setTimeout(() => setProcessingStatus('Building your map...'), 1600);
@@ -190,7 +157,7 @@ export default function UploadScreen() {
         conceptEdges: sampleEdges,
         fileImports: sampleFileImports,
       });
-      setScreen('explorer');
+      navigate('/explorer', { replace: true });
     }, 2400);
   };
 
@@ -271,10 +238,10 @@ export default function UploadScreen() {
           </div>
 
           <h2 className="text-xl font-medium mb-2" style={{ color: '#E8E8E6' }}>
-            Drop your code. We'll make sense of it.
+            Drop a codebase. See how it's architected.
           </h2>
           <p className="text-sm mb-4" style={{ color: '#888' }}>
-            Works with any language. No setup. No config.
+            Works with any language or framework. No setup required.
           </p>
           <p className="text-xs" style={{ color: '#555' }}>
             Drop a .zip file or click to browse
@@ -306,13 +273,13 @@ export default function UploadScreen() {
             e.target.style.borderColor = 'rgba(159, 225, 203, 0.2)';
           }}
         >
-          Try the demo — explore an Instagram clone
+          Try the demo — explore the architecture of an Instagram clone
         </button>
       </div>
 
       {/* Footer */}
       <p className="mt-8 text-xs z-10" style={{ color: '#444', animation: 'fade-in 1s ease-out 0.4s both' }}>
-        Your code is processed securely. Analysis powered by Claude AI.
+        Your code is processed securely. Architecture analysis powered by Claude AI.
       </p>
     </div>
   );

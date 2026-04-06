@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import useStore from '../store/useStore';
 import { Building2, AlertTriangle, RefreshCw, Sparkles, Lightbulb, Puzzle, X } from 'lucide-react';
+import KeywordHighlighter from './KeywordHighlighter';
 
 const CATEGORY_COLORS = {
   architecture: '#6366f1',
@@ -75,12 +76,12 @@ export default function InsightCard() {
             {insightCard.title}
           </h3>
           <p className="text-xs leading-relaxed" style={{ color: '#94a3b8' }}>
-            {insightCard.summary}
+            <KeywordHighlighter text={insightCard.summary} accentColor={color} />
           </p>
 
           {expanded && (
             <p className="text-xs leading-relaxed mt-2" style={{ color: '#cbd5e1', animation: 'fade-in 0.2s ease-out' }}>
-              {insightCard.detail}
+              <KeywordHighlighter text={insightCard.detail} accentColor={color} />
             </p>
           )}
         </div>

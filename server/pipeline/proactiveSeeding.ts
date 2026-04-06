@@ -35,7 +35,7 @@ Suggested starting concept: ${synthesis.suggested_starting_concept}
 Return JSON with: exploration_path (array of concept ids in order), reasoning (why this order).`,
       schema: proactiveSeedingSchema,
       schemaName: 'proactive_seeding',
-      maxTokens: 2048,
+      maxTokens: 1024,
       model: 'fast',
     });
 

@@ -2,22 +2,16 @@
 
 ## Overview
 
-This document defines the AI architecture that transforms Codebase Explorer from a single-shot concept generator into a proactive, adaptive codebase understanding system. The goal: a user uploads a zip, and the app guides them through their codebase without them ever needing to type a question.
+Codebase Explorer is a proactive, adaptive codebase understanding system. A user uploads a zip, and the app guides them through their codebase without them ever needing to type a question.
 
-### Current State
-
-The app makes one Claude API call with ~20 file samples and import edges. It returns a flat concept graph (8-15 nodes) with descriptions. There is no persistence, no retrieval, no user modeling, and no proactive guidance. The frontend (React + Vite + Zustand + Canvas) is mature and well-built.
-
-### Target State
-
-A multi-stage pipeline extracts deep codebase structure. All code and explanations are stored with vector embeddings for accurate retrieval. A user model tracks exploration state and understanding. A proactive engine drives the UI — deciding what to show next, which nodes to highlight, and what insights to surface — before the user asks.
+The system runs a 7-stage ingestion pipeline that extracts deep codebase structure, stores all code and explanations with vector embeddings for accurate retrieval, tracks user exploration state and understanding via a user model, and uses a proactive engine to drive the UI — deciding what to show next, which nodes to highlight, and what insights to surface — before the user asks. The frontend is built with React + Vite + Zustand + Canvas.
 
 ---
 
 ## Design Principles
 
-1. **No frameworks.** Use Anthropic's SDK directly with their five composable patterns (prompt chaining, parallelization, orchestrator-workers, routing, evaluator-optimizer). No LangChain, no LangGraph.
-2. **Structured outputs everywhere.** Every Claude call uses `output_config.format` with `json_schema` for guaranteed valid JSON. No regex parsing, no try/catch on malformed responses.
+1. **No frameworks.** Uses Anthropic's SDK directly with composable patterns (prompt chaining, parallelization, orchestrator-workers, routing, evaluator-optimizer). No LangChain, no LangGraph.
+2. **Structured outputs everywhere.** Every Claude call uses tool-use (`tool_choice: { type: 'tool', name: schemaName }`) for guaranteed valid JSON. No regex parsing, no try/catch on malformed responses.
 3. **Stream everything user-facing.** Pipeline progress, chat responses, and proactive insights all stream via SSE. The user never stares at a spinner wondering if something is broken.
 4. **Start simple, add complexity only where it improves outcomes.** Each pipeline stage exists because a single call demonstrably cannot produce the same quality output.
 5. **Grounded in real code.** Every explanation, insight, and answer references actual files and line numbers from the user's codebase, retrieved via RAG — never from Claude's general training knowledge.
@@ -32,22 +26,23 @@ A multi-stage pipeline extracts deep codebase structure. All code and explanatio
 │                                                                   │
 │  Upload → Processing UI → Explorer (Graph + Inspector + Chat)    │
 │  Zustand store ← SSE streams from backend                        │
-│  Supabase Realtime subscription for pipeline progress            │
 └──────────────────────────┬───────────────────────────────────────┘
                            │ HTTPS / SSE
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     API SERVER (Node.js + Hono)                  │
+│                     API SERVER (Node.js + Hono, port 3007)       │
 │                                                                   │
 │  POST /api/pipeline/start     → Kick off ingestion pipeline      │
 │  GET  /api/pipeline/:id/stream → SSE stream of pipeline progress │
+│  GET  /api/pipeline/:id/data  → Get all project data             │
 │  POST /api/chat               → RAG-powered chat (streaming)     │
 │  POST /api/proactive          → Get next proactive action        │
 │  POST /api/explain            → Explain a specific node          │
+│  PATCH /api/user-state        → Update user exploration state    │
 │                                                                   │
-│  Anthropic SDK (claude-sonnet-4-6)                               │
+│  Anthropic SDK (claude-sonnet-4-6 + claude-haiku-4-5)            │
 │  Supabase client (database + storage + vectors)                  │
-│  Embedding client (voyage-3 or text-embedding-3-small)           │
+│  OpenAI embedding client (text-embedding-3-small)                │
 └──────────────────────────┬───────────────────────────────────────┘
                            │
                            ▼
@@ -67,24 +62,24 @@ A multi-stage pipeline extracts deep codebase structure. All code and explanatio
 │  pgvector:                                                       │
 │    code_chunks.embedding (HNSW index, cosine distance)           │
 │                                                                   │
-│  Storage:                                                        │
-│    uploaded-zips bucket                                           │
+│  Full-text search:                                               │
+│    code_chunks.fts (GIN index, tsvector)                         │
 │                                                                   │
-│  Realtime:                                                       │
-│    Pipeline progress broadcasts                                  │
+│  Hybrid search function:                                         │
+│    search_code_chunks (70% vector / 30% lexical weighting)       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Hono over Next.js or Cloudflare Workers
 
-The existing app is Vite + React. Adding Next.js would mean migrating the entire frontend or running two separate frameworks — unnecessary complexity. Cloudflare Workers have execution time limits that complicate multi-minute pipelines.
+The app is Vite + React. Adding Next.js would mean migrating the entire frontend or running two separate frameworks — unnecessary complexity. Cloudflare Workers have execution time limits that complicate multi-minute pipelines.
 
 **Hono** is the right choice:
 - Lightweight (~14KB), runs on Node.js alongside the existing Vite dev server
-- First-class SSE streaming support
+- First-class SSE streaming support via `hono/streaming`
 - Can deploy to Cloudflare Workers, Vercel Edge, or plain Node.js later
 - No framework lock-in, no frontend migration required
-- Add it as `server/` directory alongside the existing `src/`
+- Lives in the `server/` directory alongside the existing `src/`
 
 In development, Vite proxies `/api/*` to the Hono server. In production, both can run as a single Node.js process or be split into separate services.
 
@@ -92,7 +87,7 @@ In development, Vite proxies `/api/*` to the Hono server. In production, both ca
 
 ## Component 1: Ingestion Pipeline
 
-The pipeline transforms a zip file into a rich, queryable knowledge base. It runs as an async job — the client gets a job ID immediately and subscribes to progress updates via Supabase Realtime.
+The pipeline transforms a zip file into a rich, queryable knowledge base. It runs as an async background job — the client gets a project ID immediately and subscribes to progress updates via SSE from `/api/pipeline/:id/stream` (polled every 1 second from the server).
 
 ### Pipeline Stages
 
@@ -100,194 +95,103 @@ The pipeline transforms a zip file into a rich, queryable knowledge base. It run
 ZIP Upload
     │
     ▼
-[Stage 1] File Extraction & Classification (client + server, ~2s)
+[Stage 1] File Extraction & Classification (client-side, ~2s)
     │
     ▼
-[Stage 2] Parallel File Analysis (server, ~15-30s)
-    │    ├── Batch 1: files 1-10  → Claude
-    │    ├── Batch 2: files 11-20 → Claude
-    │    └── Batch N: files N...  → Claude
+[Stage 2] Sequential File Analysis (server, batches of 15 files)
+    │    ├── Batch 1: files 1-15  → Claude Haiku
+    │    ├── (60s rate-limit wait)
+    │    ├── Batch 2: files 16-30 → Claude Haiku
+    │    ├── (60s rate-limit wait)
+    │    └── Batch N: remaining   → Claude Haiku
     │
     ▼
-[Stage 3] Concept Synthesis (server, ~5-10s)
-    │    One Claude call with all file analyses
+[Stage 3] Concept Synthesis (server, 1 Claude Sonnet call)
+    │    All file analyses → concept graph
     │
     ▼
-[Stage 4] Relationship & Depth Mapping (server, ~5-10s)
-    │    ├── Concept relationship analysis  → Claude
-    │    └── Multi-level explanations        → Claude (parallel)
+[Stage 4] Relationship & Depth Mapping (server, 1 Claude call)
+    │    Multi-level explanations (beginner/intermediate/advanced)
     │
     ▼
-[Stage 5] Insight Generation (server, ~5s)
-    │    Senior engineer perspective → Claude
+[Stage 5] Insight Generation (server, 1 Claude call)
+    │    Senior engineer perspective
     │
     ▼
-[Stage 6] Embedding & Indexing (server, ~10-20s)
-    │    ├── Chunk all files with contextual descriptions
-    │    ├── Generate embeddings (batch)
-    │    └── Store in pgvector
+[Stage 6] Embedding & Indexing (server)
+    │    ├── Chunk all files (~800 tokens, 10% overlap)
+    │    ├── Generate embeddings (OpenAI text-embedding-3-small)
+    │    └── Store in Supabase with pgvector
     │
     ▼
-[Stage 7] Proactive Queue Seeding (server, ~3s)
+[Stage 7] Proactive Queue Seeding (server, 1 Claude call)
          Generate initial exploration path
 ```
 
-**Total estimated time: 45-80 seconds** for a medium codebase (~100 files). The UI shows progressive results — the concept graph appears after Stage 3, and the user can start exploring while Stages 4-7 complete in the background.
+The UI shows progressive results via SSE — the concept graph appears after Stage 3, and the user can start exploring while Stages 4-7 complete in the background.
 
 ### Stage 1: File Extraction & Classification
 
-**Runs on:** Client (existing `fileParser.js`) + light server processing
+**Runs on:** Client (`fileParser.js`)
 **Input:** ZIP file
-**Output:** File tree, file contents, import edges, language stats
+**Output:** File tree, file contents, import edges
 
-This stage already exists. Enhancements:
-- Classify files by role (component, utility, config, test, types, etc.) using filename patterns
-- Detect framework (React, Express, Django, etc.) from package.json / requirements.txt / go.mod
-- Compute file importance score based on: import count (how many files import it), file size, and role
+The client-side parser:
+- Extracts the ZIP file and filters out non-code files (ignores `node_modules`, `.git`, `dist`, `build`, etc.)
+- Identifies code files by extension
+- Extracts imports via regex (ES6 `import`, CommonJS `require`, Python `import`/`from`, Go `import`, Rust `use`)
+- Resolves relative import paths to actual file paths
+- Sends file tree, contents, and import edges to the server via `POST /api/pipeline/start`
+
+### Stage 2: Sequential File Analysis
+
+**Runs on:** Server (multiple Claude Haiku calls, run sequentially)
+**Input:** All code files from the client
+**Output:** Per-file analysis objects stored in `files` table
+
+Files are processed in batches of 15. Each file's content is **truncated to 1,500 characters** to stay within token limits. Batches run **sequentially** with a **60-second wait** between each batch to respect Anthropic rate limits.
+
+Each batch returns structured JSON via tool-use with the following per-file schema:
 
 ```typescript
-// New: file classification by pattern matching (no Claude call needed)
-function classifyFile(path: string, content: string): FileRole {
-  if (/\.(test|spec)\.(js|ts|jsx|tsx)$/.test(path)) return 'test';
-  if (/\.(config|rc)\.(js|ts|json)$/.test(path)) return 'config';
-  if (/(types|interfaces|models)\.(ts|d\.ts)$/.test(path)) return 'types';
-  if (/components\//.test(path)) return 'component';
-  if (/(utils?|helpers?|lib)\//.test(path)) return 'utility';
-  if (/(routes?|api|controllers?)\//.test(path)) return 'api';
-  if (/(middleware|hooks)\//.test(path)) return 'middleware';
-  // ... more patterns
-  return 'source';
+interface FileAnalysis {
+  path: string;
+  purpose: string;           // One sentence, plain English
+  concepts: string[];        // 2-3 keyword concepts
+  key_exports: Array<{       // Max 3 exports
+    name: string;
+    what_it_does: string;
+  }>;
+  depends_on: string[];      // Imported file paths
+  complexity: 'simple' | 'moderate' | 'complex';
+  role: 'entry_point' | 'core_logic' | 'data' | 'ui' | 'utility' | 'config' | 'test' | 'types';
 }
 ```
 
-### Stage 2: Parallel File Analysis
-
-**Runs on:** Server (multiple Claude calls in parallel)
-**Input:** All code files, classified and ranked by importance
-**Output:** Per-file analysis objects stored in `files` table
-
-**Why this stage exists:** The current single-call approach sends 20 file samples. A proper analysis needs to look at every file — but sending 100+ files in one prompt would blow the context window and reduce quality. Instead, we batch files and analyze them in parallel.
-
-**Batching strategy:**
-- Group files by concept proximity (files in the same directory or importing each other go together)
-- Each batch gets 5-8 files plus the project-level context (framework, directory structure)
-- Run up to 5 batches in parallel (stay within Anthropic rate limits)
-
-```typescript
-// Structured output schema for file analysis
-const fileAnalysisSchema = {
-  type: "object",
-  properties: {
-    files: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          purpose: { type: "string" },           // One sentence, plain English
-          concepts: {                              // What high-level ideas this file implements
-            type: "array",
-            items: { type: "string" }
-          },
-          key_exports: {                           // What this file provides to others
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                what_it_does: { type: "string" }   // Plain English
-              },
-              required: ["name", "what_it_does"]
-            }
-          },
-          depends_on: {                            // Semantic dependencies (not just imports)
-            type: "array",
-            items: { type: "string" }              // File paths
-          },
-          complexity: {
-            type: "string",
-            enum: ["simple", "moderate", "complex"]
-          },
-          role: {
-            type: "string",
-            enum: ["entry_point", "core_logic", "data", "ui", "utility", "config", "test", "types"]
-          }
-        },
-        required: ["path", "purpose", "concepts", "key_exports", "depends_on", "complexity", "role"]
-      }
-    }
-  },
-  required: ["files"]
-};
-```
+Failed batches fall back to minimal stub analyses so the pipeline continues.
 
 ### Stage 3: Concept Synthesis
 
-**Runs on:** Server (single Claude call)
-**Input:** All file analyses from Stage 2, file tree structure, framework detection
+**Runs on:** Server (single Claude Sonnet call)
+**Input:** All file analyses from Stage 2, framework detection from Stage 1
 **Output:** Concept graph (nodes + edges) stored in `concepts` and `concept_edges` tables
 
-**Why this is separate from Stage 2:** Concepts are emergent — they come from seeing all files together and understanding the patterns. The file analysis provides the raw material; synthesis is the creative step.
+Claude receives all file analyses and identifies natural conceptual groupings. The structured output includes:
 
-**Prompt design:** Give Claude all file analyses and ask it to identify the natural conceptual groupings. The prompt emphasizes:
-- Concepts should be meaningful to non-technical users (not "utils" or "helpers")
-- Each concept should have a clear metaphor or real-world analogy
-- The number of concepts should scale with codebase complexity (5-20)
-- Every file must belong to exactly one concept
+- **Concepts** (3-20): Each has an id, name, emoji, color, metaphor, one-liner, explanation, deep explanation, associated file IDs, and importance level (critical/important/supporting)
+- **Edges**: Relationships between concepts with labels and strength (strong/moderate/weak)
+- **Suggested starting concept**: Where a new user should look first
+- **Codebase summary**: 2-3 sentences about the whole project
 
-```typescript
-const conceptSynthesisSchema = {
-  type: "object",
-  properties: {
-    concepts: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          name: { type: "string" },              // e.g., "User Authentication"
-          emoji: { type: "string" },
-          color: { type: "string", enum: ["teal", "purple", "coral", "blue", "amber", "pink", "green", "gray"] },
-          metaphor: { type: "string" },          // e.g., "Like a bouncer at a club"
-          one_liner: { type: "string" },         // 10 words max
-          explanation: { type: "string" },       // 2-3 sentences, plain English
-          deep_explanation: { type: "string" },  // 2-3 paragraphs, more technical
-          file_ids: { type: "array", items: { type: "string" } },
-          importance: { type: "string", enum: ["critical", "important", "supporting"] }
-        },
-        required: ["id", "name", "emoji", "color", "metaphor", "one_liner", "explanation", "deep_explanation", "file_ids", "importance"]
-      }
-    },
-    edges: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          source: { type: "string" },
-          target: { type: "string" },
-          relationship: { type: "string" },      // e.g., "sends user data to"
-          strength: { type: "string", enum: ["strong", "moderate", "weak"] }
-        },
-        required: ["source", "target", "relationship", "strength"]
-      }
-    },
-    suggested_starting_concept: { type: "string" },  // Where a new user should look first
-    codebase_summary: { type: "string" }              // 2-3 sentences about the whole project
-  },
-  required: ["concepts", "edges", "suggested_starting_concept", "codebase_summary"]
-};
-```
+**At this point, the concept graph renders in the UI.** The user sees nodes appearing and can start exploring while Stages 4-7 complete.
 
-**At this point, the concept graph renders in the UI.** The user sees nodes appearing and can start exploring. Stages 4-7 enrich the data in the background.
+### Stage 4: Relationship & Depth Mapping
 
-### Stage 4: Relationship & Depth Mapping (parallel)
-
-**Runs on:** Server (2 parallel Claude calls)
+**Runs on:** Server (1 Claude call)
 **Input:** Concept graph + file analyses
+**Output:** Multi-level explanations for each concept
 
-**Call A — Relationship deep dive:** For each edge in the concept graph, generate a plain-English explanation of how the concepts interact, with specific file references.
-
-**Call B — Multi-level explanations:** For each concept, generate explanations at three levels:
+Generates explanations at three levels per concept:
 - **Beginner:** Uses only analogies and everyday language. No code terms.
 - **Intermediate:** Mentions technical terms but explains them inline.
 - **Advanced:** Assumes programming familiarity, references specific patterns and libraries.
@@ -298,58 +202,35 @@ These levels power the adaptive explanation system — the user model determines
 
 **Runs on:** Server (single Claude call)
 **Input:** Full analysis from Stages 2-4
-**Output:** 10-20 proactive insights stored in `insights` table
+**Output:** Proactive insights stored in `insights` table
 
-The prompt asks Claude to think like a senior engineer doing a code review of an unfamiliar codebase. What would they notice first? What would concern them? What's clever? What's risky?
+The prompt asks Claude to think like a senior engineer doing a code review of an unfamiliar codebase. Insights are categorized as:
 
-```typescript
-const insightSchema = {
-  type: "object",
-  properties: {
-    insights: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string" },             // e.g., "No error handling in API calls"
-          category: { type: "string", enum: ["architecture", "risk", "pattern", "praise", "suggestion", "complexity"] },
-          summary: { type: "string" },           // 1-2 sentences
-          detail: { type: "string" },            // Full explanation
-          related_concept_ids: { type: "array", items: { type: "string" } },
-          related_file_paths: { type: "array", items: { type: "string" } },
-          priority: { type: "integer" },         // 1-10, higher = show sooner
-          requires_understanding: {               // Concepts user should see first
-            type: "array", items: { type: "string" }
-          }
-        },
-        required: ["title", "category", "summary", "detail", "related_concept_ids", "related_file_paths", "priority", "requires_understanding"]
-      }
-    }
-  },
-  required: ["insights"]
-};
-```
+| Category | Description |
+|----------|-------------|
+| `architecture` | Structural observations |
+| `risk` | Potential problems or vulnerabilities |
+| `pattern` | Design patterns detected |
+| `praise` | Well-designed aspects |
+| `suggestion` | Improvement recommendations |
+| `complexity` | Areas of high complexity |
+
+Each insight includes: title, category, summary, detail, related concept IDs, related file paths, priority (1-10), and prerequisite concepts the user should understand first.
 
 ### Stage 6: Embedding & Indexing
 
-**Runs on:** Server (embedding API calls + Supabase inserts)
+**Runs on:** Server (OpenAI embedding API + Supabase inserts)
 **Input:** All file contents + contextual descriptions from earlier stages
 **Output:** Chunked, embedded code stored in `code_chunks` table with HNSW-indexed vectors
 
 **Chunking strategy:**
 - Split each file into ~800-token chunks with 10% overlap
-- For each chunk, generate a contextual prefix using the file's analysis from Stage 2: `"This chunk is from {file.path}, which {file.purpose}. It is part of the {concept.name} concept."`
-- Embed the contextualized chunks (context prefix + code)
+- Each chunk includes a contextual prefix: `"This chunk is from {file.path}, which {file.purpose}. It is part of the {concept.name} concept."`
+- Track line numbers (start/end) for each chunk
 
-**Embedding model choice:** `text-embedding-3-small` (1536 dimensions).
+**Embedding model:** OpenAI `text-embedding-3-small` (1536 dimensions), processed in batches of up to 2,048 texts.
 
-Why not Voyage AI:
-- One fewer API dependency to manage
-- OpenAI's embedding API is battle-tested, fast, and cheap ($0.02/1M tokens)
-- The quality difference is marginal when using contextual retrieval (which compensates for embedding weaknesses)
-- Voyage AI's advantage is most pronounced without contextual retrieval
-
-**Hybrid search:** The `code_chunks` table includes both vector embeddings and a full-text search (`tsvector`) column. At query time, both are searched and results are fused with a 70/30 weighting (semantic/lexical). This catches cases where the user asks about a specific function name (lexical match) vs. a conceptual question (semantic match).
+**Hybrid search:** The `code_chunks` table includes both vector embeddings and a full-text search (`tsvector`) column. At query time, both are searched via the `search_code_chunks` RPC function and results are fused with a **70/30 weighting** (semantic/lexical). This catches cases where the user asks about a specific function name (lexical match) vs. a conceptual question (semantic match).
 
 ### Stage 7: Proactive Queue Seeding
 
@@ -357,7 +238,7 @@ Why not Voyage AI:
 **Input:** Concept graph, insights, suggested starting concept
 **Output:** Initial exploration path stored in `user_state`
 
-Generates an ordered sequence of "exploration steps" — what the user should see first, second, third. This isn't a rigid tour; the proactive engine (Component 4) adjusts the path in real-time based on what the user actually does. But having a starting path means the app can guide the user from the moment the graph loads.
+Generates an ordered sequence of exploration steps — what the user should see first, second, third. This isn't a rigid tour; the proactive engine (Component 4) adjusts the path in real-time based on what the user actually does. But having a starting path means the app can guide the user from the moment the graph loads.
 
 ---
 
@@ -377,12 +258,12 @@ create extension if not exists vector with schema extensions;
 create table projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  framework text,                              -- e.g., "React + Express"
-  language text,                               -- primary language
+  framework text,
+  language text,
   file_count integer,
-  summary text,                                -- codebase_summary from Stage 3
-  pipeline_status text default 'pending',      -- pending, processing, stage_N, complete, failed
-  pipeline_progress jsonb default '{}',        -- { stage: 3, total_stages: 7, message: "..." }
+  summary text,
+  pipeline_status text default 'pending',
+  pipeline_progress jsonb default '{}',
   created_at timestamptz default now()
 );
 
@@ -393,9 +274,9 @@ create table files (
   path text not null,
   name text not null,
   content text,
-  analysis jsonb,                              -- Stage 2 output for this file
-  concept_id text,                             -- which concept this file belongs to
-  role text,                                   -- entry_point, core_logic, ui, etc.
+  analysis jsonb,
+  concept_id text,
+  role text,
   importance_score float default 0,
   created_at timestamptz default now(),
   unique(project_id, path)
@@ -405,18 +286,18 @@ create table files (
 create table concepts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references projects(id) on delete cascade,
-  concept_key text not null,                   -- short key like "auth"
+  concept_key text not null,
   name text not null,
   emoji text,
   color text,
   metaphor text,
   one_liner text,
-  explanation text,                            -- default level explanation
+  explanation text,
   deep_explanation text,
-  beginner_explanation text,                   -- Stage 4 level explanations
+  beginner_explanation text,
   intermediate_explanation text,
   advanced_explanation text,
-  importance text,                             -- critical, important, supporting
+  importance text,
   created_at timestamptz default now(),
   unique(project_id, concept_key)
 );
@@ -429,7 +310,7 @@ create table concept_edges (
   target_concept_key text not null,
   relationship text not null,
   strength text,
-  explanation text,                            -- Stage 4 deep relationship explanation
+  explanation text,
   created_at timestamptz default now()
 );
 
@@ -438,10 +319,10 @@ create table code_chunks (
   id bigint primary key generated always as identity,
   project_id uuid references projects(id) on delete cascade,
   file_path text not null,
-  chunk_index integer not null,                -- position within file
-  content text not null,                       -- raw code chunk
-  context_summary text,                        -- contextual prefix
-  metadata jsonb default '{}',                 -- { concept_id, file_role, language, line_start, line_end }
+  chunk_index integer not null,
+  content text not null,
+  context_summary text,
+  metadata jsonb default '{}',
   embedding extensions.vector(1536),
   created_at timestamptz default now()
 );
@@ -455,7 +336,7 @@ alter table code_chunks add column fts tsvector
   generated always as (to_tsvector('english', content)) stored;
 create index code_chunks_fts_idx on code_chunks using gin (fts);
 
--- Metadata index for filtered queries (e.g., search within a concept)
+-- Metadata and project indexes
 create index code_chunks_metadata_idx on code_chunks using gin (metadata);
 create index code_chunks_project_idx on code_chunks (project_id);
 
@@ -463,14 +344,14 @@ create index code_chunks_project_idx on code_chunks (project_id);
 create table user_state (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references projects(id) on delete cascade,
-  explored_concepts text[] default '{}',       -- concept keys the user has viewed
-  explored_files text[] default '{}',          -- file paths the user has viewed
-  time_per_concept jsonb default '{}',         -- { "auth": 45, "database": 12 } seconds
-  understanding_level jsonb default '{}',      -- { "auth": "intermediate", "database": "beginner" }
-  exploration_path text[] default '{}',        -- ordered concept keys to explore
-  current_position integer default 0,          -- index in exploration_path
-  insights_seen text[] default '{}',           -- insight IDs already shown
-  total_exploration_time integer default 0,    -- seconds
+  explored_concepts text[] default '{}',
+  explored_files text[] default '{}',
+  time_per_concept jsonb default '{}',
+  understanding_level jsonb default '{}',
+  exploration_path text[] default '{}',
+  current_position integer default 0,
+  insights_seen text[] default '{}',
+  total_exploration_time integer default 0,
   last_active_at timestamptz default now(),
   created_at timestamptz default now()
 );
@@ -486,7 +367,7 @@ create table insights (
   related_concept_keys text[] default '{}',
   related_file_paths text[] default '{}',
   priority integer default 5,
-  requires_understanding text[] default '{}',  -- concepts user should know first
+  requires_understanding text[] default '{}',
   created_at timestamptz default now()
 );
 
@@ -494,9 +375,9 @@ create table insights (
 create table chat_messages (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references projects(id) on delete cascade,
-  role text not null,                          -- user, assistant
+  role text not null,
   content text not null,
-  context jsonb default '{}',                  -- { selected_node, retrieved_chunks }
+  context jsonb default '{}',
   created_at timestamptz default now()
 );
 
@@ -553,52 +434,42 @@ $$;
 
 When the app needs to explain something (a concept, a file, a relationship, or answer a question):
 
-1. **Generate query embedding** from the question/topic
-2. **Call `search_code_chunks`** with the query embedding and optional concept filter
-3. **Format retrieved chunks** as XML-tagged context for Claude
-4. **Call Claude** with the retrieved context + the question + the user's understanding level
+1. **Generate query embedding** from the question/topic (OpenAI `text-embedding-3-small`)
+2. **Call `search_code_chunks`** RPC via Supabase with the query embedding and optional concept filter
+3. **Fallback:** If the RPC call fails, falls back to simple full-text search without embeddings
+4. **Format retrieved chunks** as XML-tagged context for Claude
+5. **Call Claude** with the retrieved context + the question + the user's understanding level
 
 ```typescript
-async function explainWithRAG(
+// Actual retrieval implementation (server/rag/retriever.ts)
+async function retrieveChunks(
   projectId: string,
-  question: string,
-  userLevel: 'beginner' | 'intermediate' | 'advanced',
-  conceptFilter?: string
-): Promise<ReadableStream> {
-  // 1. Embed the question
-  const queryEmbedding = await embed(question);
-
-  // 2. Retrieve relevant code chunks
-  const { data: chunks } = await supabase.rpc('search_code_chunks', {
+  queryText: string,
+  queryEmbedding: number[],
+  matchCount: number = 10,
+  filterConcept?: string
+): Promise<RetrievedChunk[]> {
+  const { data, error } = await supabase.rpc('search_code_chunks', {
     p_project_id: projectId,
-    query_text: question,
-    query_embedding: queryEmbedding,
-    match_count: 10,
-    filter_concept: conceptFilter
+    query_text: queryText,
+    query_embedding: JSON.stringify(queryEmbedding),
+    match_threshold: 0.3,
+    match_count: matchCount,
+    filter_concept: filterConcept || null,
   });
 
-  // 3. Build context
-  const context = chunks.map((c, i) =>
-    `<chunk index="${i + 1}" file="${c.file_path}" lines="${c.metadata.line_start}-${c.metadata.line_end}">
-${c.context_summary}
+  if (error) {
+    // Fallback: simple text search without embeddings
+    const { data: fallbackData } = await supabase
+      .from('code_chunks')
+      .select('*')
+      .eq('project_id', projectId)
+      .textSearch('fts', queryText, { type: 'websearch' })
+      .limit(matchCount);
+    return (fallbackData || []) as RetrievedChunk[];
+  }
 
-${c.content}
-</chunk>`
-  ).join('\n');
-
-  // 4. Stream Claude response
-  return anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: `You are explaining code to someone at a ${userLevel} level.
-Reference specific files and line numbers from the provided code.
-Never make up code that doesn't exist in the codebase.
-Be concise and use plain English.`,
-    messages: [{
-      role: 'user',
-      content: `<codebase_context>\n${context}\n</codebase_context>\n\n${question}`
-    }]
-  });
+  return (data || []) as RetrievedChunk[];
 }
 ```
 
@@ -606,64 +477,43 @@ Be concise and use plain English.`,
 
 ## Component 3: User Model
 
-### What We Track
+### What Is Tracked
 
 | Signal | How Collected | What It Tells Us |
 |--------|--------------|------------------|
 | Concepts viewed | Click/tap on concept node | What they've seen |
 | Time per concept | Timer from select to deselect | How much they engaged |
 | Files opened | Click on file in inspector | Depth of exploration |
-| Code panel time | Timer while code panel is open | Whether they read code or just glanced |
 | Insights dismissed vs expanded | Click behavior on insight cards | What interests them |
 | Questions asked | Chat input | What they don't understand |
-| Explanation level requested | "Explain simpler" / "More detail" buttons | Their comfort level |
 
 ### Understanding Level Estimation
 
-For each concept, the user has an estimated understanding level:
+For each concept, the user has an estimated understanding level based on time spent:
 
-- **unseen** — hasn't looked at it
-- **glanced** — selected it briefly (<5 seconds)
-- **beginner** — viewed it, read the explanation (5-30 seconds)
-- **intermediate** — explored files within it, or asked questions about it
-- **advanced** — spent significant time, viewed code, explored connections
+| Level | Criteria |
+|-------|----------|
+| `unseen` | Hasn't looked at it |
+| `glanced` | Selected it briefly (<5 seconds) |
+| `beginner` | Viewed it, read the explanation (5-30 seconds) |
+| `intermediate` | Engaged more deeply (30-120 seconds) |
+| `advanced` | Spent significant time (>120 seconds) |
 
 The level determines which explanation variant to show (from Stage 4) and influences the proactive engine's decisions.
 
-```typescript
-function estimateUnderstanding(
-  concept: string,
-  state: UserState
-): 'unseen' | 'glanced' | 'beginner' | 'intermediate' | 'advanced' {
-  if (!state.explored_concepts.includes(concept)) return 'unseen';
-
-  const timeSpent = state.time_per_concept[concept] || 0;
-  const filesViewed = state.explored_files.filter(f =>
-    getFileConcept(f) === concept
-  ).length;
-  const totalFiles = getConceptFileCount(concept);
-  const fileRatio = filesViewed / totalFiles;
-
+```javascript
+// From src/hooks/useUserState.js
+function estimateUnderstanding(conceptId, timeSpent) {
   if (timeSpent < 5) return 'glanced';
-  if (timeSpent < 30 && fileRatio < 0.2) return 'beginner';
-  if (timeSpent < 120 || fileRatio < 0.5) return 'intermediate';
+  if (timeSpent < 30) return 'beginner';
+  if (timeSpent < 120) return 'intermediate';
   return 'advanced';
 }
 ```
 
-### State Updates
+### State Persistence
 
-User state updates are batched and sent to Supabase every 5 seconds (or on navigation). This avoids flooding the database with writes on every mouse move.
-
-```typescript
-// Client-side: debounced state sync
-const syncUserState = debounce(async (state: Partial<UserState>) => {
-  await fetch('/api/user-state', {
-    method: 'PATCH',
-    body: JSON.stringify(state)
-  });
-}, 5000);
-```
+User state updates are **debounced and sent to Supabase every 5 seconds** via `PATCH /api/user-state`. State is also flushed on component unmount.
 
 ---
 
@@ -673,116 +523,46 @@ This is the core differentiator. The proactive engine decides what the user shou
 
 ### How It Works
 
-The proactive engine runs a Claude call every time the user's context changes meaningfully (selects a new concept, finishes reading an explanation, dismisses an insight). It takes the full user state and returns a UI action.
+The frontend hook polls `POST /api/proactive` **every 15 seconds**. The server-side engine uses **purely deterministic rules** — no Claude calls — to decide the next UI action based on the user's current exploration state.
 
-```typescript
-const proactiveActionSchema = {
-  type: "object",
-  properties: {
-    action: {
-      type: "string",
-      enum: [
-        "highlight_concept",    // Pulse a concept node on the graph
-        "show_insight",         // Display an insight card
-        "suggest_connection",   // Highlight an edge and explain it
-        "suggest_file",         // Recommend a specific file to look at
-        "show_summary",         // Show a progress/summary card
-        "deepen_current",       // Offer deeper explanation of current concept
-        "nothing"               // User is engaged, don't interrupt
-      ]
-    },
-    target_id: { type: "string" },             // concept key, file path, edge id, or insight id
-    reason: { type: "string" },                // Why this action (for debugging, not shown to user)
-    message: { type: "string" },               // What to show the user (if applicable)
-    priority: { type: "string", enum: ["low", "medium", "high"] }
-  },
-  required: ["action", "reason", "priority"]
-};
+### Decision Rules (in priority order)
+
+```
+Rule 1: New user → highlight the suggested starting concept
+Rule 2: Exploration path exists → suggest next concept in path
+Rule 3: Spent 10-30s on current concept → suggest going deeper
+Rule 4: On a concept → suggest a connected unseen concept
+Rule 5: High-priority insight with prerequisites met → show insight card
+Rule 6: Explored >70% of concepts → show progress summary
+Default: Return "nothing" — user is engaged, don't interrupt
 ```
 
-### Decision Logic
+**Key design decision:** All proactive decisions are deterministic. This keeps latency low and costs at zero for this component. Claude is only used during the initial pipeline to generate the exploration path and insights — not at runtime.
 
-The proactive engine does NOT use Claude for every decision. Most decisions are deterministic:
+### Actions & UI Integration
 
-```typescript
-function getNextAction(state: UserState, project: Project): ProactiveAction {
-  // Rule 1: If user just arrived, guide them to the starting concept
-  if (state.explored_concepts.length === 0) {
-    return {
-      action: 'highlight_concept',
-      target_id: project.suggested_starting_concept,
-      message: `Start here — this is the heart of the app`,
-      priority: 'high'
-    };
-  }
+The proactive engine returns one of these actions, which map directly to Zustand store state:
 
-  // Rule 2: If user has been on one concept for a while, suggest going deeper
-  if (currentConceptTime > 30 && currentLevel === 'beginner') {
-    return {
-      action: 'deepen_current',
-      target_id: currentConcept,
-      message: `Want to see the actual files that make this work?`,
-      priority: 'medium'
-    };
-  }
-
-  // Rule 3: If user has explored a concept, suggest a connected one they haven't seen
-  const unseenConnections = getConnectedConcepts(currentConcept)
-    .filter(c => !state.explored_concepts.includes(c));
-  if (unseenConnections.length > 0) {
-    return {
-      action: 'suggest_connection',
-      target_id: unseenConnections[0],
-      message: `This connects to ${getConceptName(unseenConnections[0])} — ${getEdgeLabel(currentConcept, unseenConnections[0])}`,
-      priority: 'medium'
-    };
-  }
-
-  // Rule 4: If there's a high-priority insight whose prerequisites are met
-  const readyInsight = getNextInsight(state);
-  if (readyInsight) {
-    return {
-      action: 'show_insight',
-      target_id: readyInsight.id,
-      message: readyInsight.summary,
-      priority: readyInsight.priority > 7 ? 'high' : 'medium'
-    };
-  }
-
-  // Rule 5: If most concepts explored, show progress summary
-  const explorationPercent = state.explored_concepts.length / project.concepts.length;
-  if (explorationPercent > 0.7 && !state.insights_seen.includes('progress_summary')) {
-    return {
-      action: 'show_summary',
-      message: `You've explored ${Math.round(explorationPercent * 100)}% of the codebase`,
-      priority: 'low'
-    };
-  }
-
-  // Rule 6: Use Claude for complex decisions (fallback)
-  // This only fires when the deterministic rules don't have a clear answer
-  return await getClaudeProactiveDecision(state, project);
-}
-```
-
-**Key design decision:** Deterministic rules handle 80% of cases. Claude is only called for genuinely ambiguous situations (e.g., "the user has explored auth and database but skipped the API layer — should I nudge them toward it or let them continue?"). This keeps latency low and costs manageable.
-
-### UI Integration
-
-The proactive engine's output maps directly to UI actions in the Zustand store:
+| Action | UI Effect |
+|--------|-----------|
+| `highlight_concept` | Pulse a concept node on the graph |
+| `show_insight` | Display a floating insight card |
+| `suggest_connection` | Highlight an edge between concepts |
+| `suggest_file` | Recommend a specific file to look at |
+| `show_summary` | Show exploration progress card |
+| `deepen_current` | Offer deeper explanation of current concept |
+| `nothing` | No change |
 
 ```typescript
-// Store actions driven by proactive engine
+// Zustand store state driven by proactive engine
 interface ProactiveUIState {
-  pulsingNodeId: string | null;          // Which node glows/pulses
-  insightCard: InsightCard | null;       // Floating insight card
-  connectionHighlight: string | null;    // Highlighted edge
-  suggestionBanner: string | null;       // Bottom suggestion text
-  explorationProgress: number;           // 0-1 completion
+  pulsingNodeId: string | null;
+  insightCard: InsightCard | null;
+  connectionHighlight: string | null;
+  suggestionBanner: string | null;
+  explorationProgress: number;    // 0-1 completion
 }
 ```
-
-The `GraphCanvas` already supports visual effects (glow, pulse, color changes). The proactive engine simply sets which node should pulse, and the canvas responds.
 
 ---
 
@@ -790,156 +570,152 @@ The `GraphCanvas` already supports visual effects (glow, pulse, color changes). 
 
 ### Design
 
-Chat is secondary — a small input at the bottom of the screen, not a prominent chatbot. It has full RAG context and streams responses.
+Chat is secondary — a small input at the bottom-left of the screen, not a prominent chatbot. It has full RAG context and streams responses.
 
 ### How It Differs from a Generic Chatbot
 
-1. **Full codebase context.** Every response is grounded in retrieved code chunks.
+1. **Full codebase context.** Every response is grounded in retrieved code chunks via hybrid search.
 2. **Awareness of user state.** If the user asks "what does this do?" the chat knows what "this" refers to (the currently selected node).
 3. **Adaptive language.** Uses the user's estimated understanding level for the relevant concept.
-4. **Graph integration.** If the chat mentions a concept or file, it can highlight it on the graph.
+4. **Graph integration.** Chat responses can reference concepts via `[[concept:key]]` and files via `[[file:path]]`, which the frontend renders as clickable links.
 
 ### Chat API Flow
 
 ```
 User types question
     ↓
-Client sends: { message, selectedNode, projectId }
+Client sends: POST /api/chat { message, selectedNode, projectId }
     ↓
 Server:
-  1. Embed the question
-  2. Retrieve relevant code chunks (filtered by selected concept if applicable)
+  1. Embed the question (OpenAI text-embedding-3-small)
+  2. Retrieve relevant code chunks via hybrid search
+     (filtered by selected concept if applicable)
   3. Build system prompt with:
      - User's understanding levels
-     - Retrieved code context
+     - Retrieved code context (XML-tagged chunks)
      - Current graph state (what's selected, what's explored)
-  4. Stream Claude response via SSE
+  4. Stream Claude Sonnet response via SSE
     ↓
 Client:
-  - Renders streaming text in chat panel
-  - Parses any file/concept references and makes them clickable
+  - Renders streaming text in ChatBar
+  - Parses [[concept:x]] and [[file:x]] references into clickable links
   - Updates user state (asked a question → deeper engagement)
-```
-
-### System Prompt Structure
-
-```typescript
-const chatSystemPrompt = `You are a guide helping someone understand their codebase.
-
-<user_context>
-Understanding levels: ${JSON.stringify(userState.understanding_level)}
-Currently viewing: ${selectedNode?.name || 'overview'}
-Concepts explored: ${userState.explored_concepts.join(', ')}
-</user_context>
-
-<codebase_context>
-${formattedChunks}
-</codebase_context>
-
-Rules:
-- Reference specific files and line numbers from the codebase context
-- Match your language to the user's understanding level for the relevant concept
-- If they ask about something you don't have code context for, say so
-- Keep responses under 200 words unless they ask for more detail
-- When mentioning a concept, wrap it in [[concept:concept_key]] for the UI to make clickable
-- When mentioning a file, wrap it in [[file:path]] for the UI to make clickable`;
 ```
 
 ---
 
 ## Data Flow: End to End
 
-### Upload → First Visual (target: <10 seconds to first concept node)
+### Upload → First Visual
 
 ```
 1. User drops ZIP file
-2. Client: Extract files, classify, detect framework (~2s)
+2. Client: Extract files, detect imports, build file tree (~2s)
 3. Client: POST /api/pipeline/start with file tree + contents
-4. Server: Create project row, return project ID
-5. Client: Subscribe to Supabase Realtime on projects table
-6. Server: Start Stage 2 (parallel file analysis)
+4. Server: Create project row in Supabase, return project ID
+5. Client: Subscribe to SSE stream at /api/pipeline/:id/stream
+6. Server: Run Stage 2 (sequential file analysis with 60s waits between batches)
 7. Server: Update pipeline_progress → client sees "Analyzing files..."
 8. Server: Complete Stage 3 (concept synthesis)
 9. Server: Write concepts + edges to Supabase
-10. Client: Realtime update triggers → load concepts from Supabase → render graph
-    (User sees the concept graph ~30-40s after upload)
-11. Server: Continues Stages 4-7 in background
-12. Client: Concepts enrich as Stages 4-5 complete (explanations deepen, insights appear)
+10. Server: SSE sends "complete" → client fetches data from /api/pipeline/:id/data
+11. Client: Load concepts, edges, files, insights → render graph in Explorer view
+12. Server: Stages 4-7 continue in background, enriching data
 ```
 
 ### User Explores a Node
 
 ```
-1. User clicks concept node
+1. User clicks concept node on GraphCanvas
 2. Client: Update Zustand state (selectedNode, start timer)
-3. Client: Sync user state to Supabase (debounced)
-4. Client: Fetch explanation via /api/explain with user's understanding level
-5. Server: RAG retrieval → Claude streaming response → SSE to client
+3. Client: Sync user state to Supabase (debounced, every 5s)
+4. Client: Fetch explanation via POST /api/explain with user's understanding level
+5. Server: RAG retrieval → Claude Sonnet streaming response → SSE to client
 6. Client: Render explanation in InspectorPanel with streaming text
-7. Proactive engine: Evaluate next action based on new state
-8. Client: Apply proactive action (pulse next node, show insight, etc.)
+7. Client: InspectorPanel shows 3-level depth selector (beginner/intermediate/advanced)
+8. Proactive engine: Next poll evaluates new state → may pulse next node or show insight
 ```
 
 ### User Asks a Question
 
 ```
-1. User types in chat input
-2. Client: POST /api/chat with message + context
-3. Server: Embed question → hybrid search → retrieve chunks
-4. Server: Stream Claude response with full context
-5. Client: Render streaming response, parse [[concept:x]] and [[file:x]] references
+1. User types in ChatBar input
+2. Client: POST /api/chat with message + selectedNode + projectId
+3. Server: Embed question → hybrid search (70% vector / 30% lexical) → retrieve chunks
+4. Server: Stream Claude Sonnet response with full RAG context
+5. Client: Render streaming response, parse [[concept:x]] and [[file:x]] as clickable links
 6. Client: Update user state (engagement signal)
 ```
 
 ---
 
-## File Structure (New)
+## File Structure
 
 ```
 server/
-├── index.ts                    # Hono app entry point
+├── index.ts                    # Hono app entry point (port 3007)
 ├── routes/
-│   ├── pipeline.ts             # POST /start, GET /:id/stream
-│   ├── chat.ts                 # POST /api/chat
-│   ├── explain.ts              # POST /api/explain
+│   ├── pipeline.ts             # POST /start, GET /:id/stream, GET /:id/data
+│   ├── chat.ts                 # POST /api/chat (streaming)
+│   ├── explain.ts              # POST /api/explain (streaming)
 │   ├── proactive.ts            # POST /api/proactive
 │   └── user-state.ts           # PATCH /api/user-state
 ├── pipeline/
 │   ├── orchestrator.ts         # Pipeline orchestration (stages 1-7)
-│   ├── fileAnalysis.ts         # Stage 2: parallel file analysis
-│   ├── conceptSynthesis.ts     # Stage 3: concept graph generation
-│   ├── depthMapping.ts         # Stage 4: relationships + multi-level explanations
-│   ├── insightGeneration.ts    # Stage 5: senior engineer insights
-│   ├── embedding.ts            # Stage 6: chunking + embedding + indexing
-│   └── proactiveSeeding.ts     # Stage 7: initial exploration path
+│   ├── fileAnalysis.ts         # Stage 2: sequential file analysis (Haiku)
+│   ├── conceptSynthesis.ts     # Stage 3: concept graph generation (Sonnet)
+│   ├── depthMapping.ts         # Stage 4: multi-level explanations (Sonnet)
+│   ├── insightGeneration.ts    # Stage 5: senior engineer insights (Sonnet)
+│   ├── embedding.ts            # Stage 6: chunking + OpenAI embedding + indexing
+│   └── proactiveSeeding.ts     # Stage 7: initial exploration path (Sonnet)
 ├── rag/
-│   ├── chunker.ts              # Code chunking with contextual descriptions
-│   ├── embedder.ts             # Embedding API client
-│   └── retriever.ts            # Hybrid search (vector + full-text)
+│   ├── chunker.ts              # Code chunking (~800 tokens, 10% overlap)
+│   ├── embedder.ts             # OpenAI text-embedding-3-small client
+│   └── retriever.ts            # Hybrid search (vector + full-text via Supabase RPC)
 ├── ai/
-│   ├── claude.ts               # Anthropic SDK wrapper (streaming + structured)
+│   ├── claude.ts               # Anthropic SDK wrapper (streaming + structured via tool-use)
 │   └── schemas.ts              # All JSON schemas for structured outputs
 ├── proactive/
-│   ├── engine.ts               # Proactive decision engine
-│   └── rules.ts                # Deterministic rules (80% of decisions)
-├── db/
-│   ├── supabase.ts             # Supabase client
-│   └── migrations/
-│       └── 001_initial.sql     # Full schema from this document
-└── utils/
-    └── sse.ts                  # SSE helper for Hono streaming
+│   └── engine.ts               # Deterministic proactive decision rules
+└── db/
+    └── supabase.ts             # Supabase client
 
-src/                            # Existing frontend (minimal changes)
+src/                            # Frontend (React + Vite)
+├── main.jsx                    # App entry point
+├── App.jsx                     # Screen routing (landing → upload → processing → explorer)
 ├── hooks/
-│   ├── useProactive.js         # Subscribe to proactive engine actions
-│   ├── useSSE.js               # Generic SSE consumption hook
-│   └── useUserState.js         # Track and sync user exploration state
+│   ├── useProactive.js         # Polls /api/proactive every 15s
+│   ├── useSSE.js               # Generic SSE stream consumption
+│   └── useUserState.js         # Track and sync user exploration state (debounced 5s)
 ├── store/
-│   └── useStore.js             # Add: proactive UI state, pipeline state
-└── components/
-    ├── InsightCard.jsx         # New: floating insight cards
-    ├── ExplorationProgress.jsx # New: progress indicator
-    └── (existing components — enhanced, not replaced)
+│   └── useStore.js             # Zustand store (screens, concepts, files, pipeline, proactive UI)
+├── utils/
+│   ├── claudeApi.js            # API client helpers (analyzeCodebase, explainFile, chatAboutCode)
+│   ├── fileParser.js           # ZIP extraction, import detection, path resolution
+│   ├── graphLayout.js          # D3 force-directed graph layout
+│   └── canvasIcons.js          # Canvas rendering utilities for graph nodes
+├── components/
+│   ├── LandingPage.jsx         # Marketing landing page
+│   ├── UploadScreen.jsx        # ZIP file upload
+│   ├── ProcessingScreen.jsx    # 6-step pipeline progress visualization
+│   ├── ExplorerView.jsx        # Main explorer layout (graph + panels)
+│   ├── GraphCanvas.jsx         # D3 force-directed concept graph (Canvas)
+│   ├── InspectorPanel.jsx      # Right sidebar: node details, 3-level explanations, file list
+│   ├── ChatBar.jsx             # Bottom-left chat with streaming + clickable references
+│   ├── InsightCard.jsx         # Floating insight cards (6 categories, color-coded)
+│   ├── ExplorationProgress.jsx # Top banner: exploration % + suggestion text
+│   ├── CodePanel.jsx           # Full file code viewer
+│   ├── TopBar.jsx              # Navigation bar
+│   └── Onboarding.jsx          # First-time user onboarding
+├── components/landing/         # Landing page sections
+│   ├── HeroSection.jsx
+│   ├── FeaturesSection.jsx
+│   ├── HowItWorks.jsx
+│   ├── Pricing.jsx
+│   └── ... (more landing sections)
+└── data/
+    ├── sampleData.js           # Demo/sample concept data
+    └── heroGraphData.js        # Landing page hero graph data
 ```
 
 ---
@@ -948,42 +724,40 @@ src/                            # Existing frontend (minimal changes)
 
 For a medium codebase (~100 files, ~50K lines):
 
-| Stage | Claude Calls | Est. Tokens | Est. Cost |
-|-------|-------------|-------------|-----------|
-| Stage 2: File Analysis | 10-15 (parallel) | ~200K total | ~$0.60 |
-| Stage 3: Concept Synthesis | 1 | ~30K | ~$0.09 |
-| Stage 4: Depth Mapping | 2 (parallel) | ~40K total | ~$0.12 |
-| Stage 5: Insights | 1 | ~20K | ~$0.06 |
-| Stage 6: Contextual descriptions | 10-15 (Haiku) | ~100K total | ~$0.03 |
-| Stage 6: Embeddings | 1 batch | ~50K tokens | ~$0.001 |
-| Stage 7: Proactive seeding | 1 | ~10K | ~$0.03 |
-| **Total ingestion** | | | **~$0.93** |
-| Per chat message | 1 | ~5K | ~$0.015 |
-| Per explanation | 1 | ~5K | ~$0.015 |
-| Per proactive Claude call | 1 | ~3K | ~$0.009 |
-
-Using `claude-sonnet-4-6` for all main calls, `claude-haiku-4-5` for contextual chunk descriptions.
+| Stage | Model | Calls | Est. Cost |
+|-------|-------|-------|-----------|
+| Stage 2: File Analysis | claude-haiku-4-5 | ~7 batches of 15 | ~$0.10 |
+| Stage 3: Concept Synthesis | claude-sonnet-4-6 | 1 | ~$0.09 |
+| Stage 4: Depth Mapping | claude-sonnet-4-6 | 1 | ~$0.12 |
+| Stage 5: Insights | claude-sonnet-4-6 | 1 | ~$0.06 |
+| Stage 6: Embeddings | text-embedding-3-small | ~1 batch | ~$0.001 |
+| Stage 7: Proactive seeding | claude-sonnet-4-6 | 1 | ~$0.03 |
+| **Total ingestion** | | | **~$0.40** |
+| Per chat message | claude-sonnet-4-6 | 1 | ~$0.015 |
+| Per explanation | claude-sonnet-4-6 | 1 | ~$0.015 |
+| Proactive engine | none (deterministic) | 0 | $0.00 |
 
 ---
 
 ## What This Does NOT Include (and Why)
 
 - **Authentication.** Not needed for MVP. One user, one project at a time. Add Supabase Auth later when multi-user is needed.
-- **File watching / incremental updates.** Re-upload the zip. Incremental analysis is a real feature but adds significant complexity for v1.
+- **File watching / incremental updates.** Re-upload the zip. Incremental analysis adds significant complexity for v1.
 - **Collaboration.** Single-user understanding tool. Sharing can come later as a link with read-only view.
-- **Custom embedding fine-tuning.** Off-the-shelf embeddings with contextual retrieval are good enough. Fine-tuning is a premature optimization.
+- **Custom embedding fine-tuning.** Off-the-shelf embeddings with contextual retrieval are good enough.
 - **Caching layer (Redis).** Supabase is the cache. The data is already persisted. Add Redis only if query latency becomes a problem.
+- **Supabase Realtime.** Pipeline progress uses SSE polling from the Hono server, not Supabase Realtime subscriptions. Simpler and avoids an extra dependency on the client.
 
 ---
 
 ## Implementation Order
 
-1. **Database schema** — Set up Supabase tables and functions
+1. **Database schema** — Supabase tables, pgvector, hybrid search function
 2. **Server skeleton** — Hono server with route stubs, Vite proxy config
 3. **Pipeline Stages 1-3** — Get the enriched concept graph generating
 4. **Pipeline Stages 4-5** — Add depth and insights (runs in background)
-5. **RAG (Stage 6)** — Chunking, embedding, hybrid search
-6. **Explain endpoint** — RAG-powered explanations for nodes
+5. **RAG (Stage 6)** — Chunking, OpenAI embedding, hybrid search
+6. **Explain endpoint** — RAG-powered streaming explanations for nodes
 7. **User state tracking** — Client-side hooks + Supabase persistence
 8. **Proactive engine** — Deterministic rules + UI integration
 9. **Chat** — RAG-powered streaming chat

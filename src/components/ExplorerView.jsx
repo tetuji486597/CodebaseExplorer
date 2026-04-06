@@ -1,14 +1,19 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import TopBar from './TopBar';
 import GraphCanvas from './GraphCanvas';
 import InspectorPanel from './InspectorPanel';
+import GuidedOverlay from './GuidedOverlay';
 import ChatBar from './ChatBar';
 import CodePanel from './CodePanel';
 import Onboarding from './Onboarding';
 import InsightCard from './InsightCard';
 import ExplorationProgress from './ExplorationProgress';
+import CompletionSummary from './CompletionSummary';
 import useUserState from '../hooks/useUserState';
 import useProactive from '../hooks/useProactive';
 import useStore from '../store/useStore';
+import { fetchAndLoadProject } from '../lib/loadProject';
 
 function Toast() {
   const toast = useStore(s => s.toast);
@@ -38,20 +43,65 @@ function Toast() {
 }
 
 export default function ExplorerView() {
+  const navigate = useNavigate();
+  const concepts = useStore(s => s.concepts);
+  const projectId = useStore(s => s.projectId);
+  const [restoring, setRestoring] = useState(false);
+
+  // Restore project data on refresh (store is empty but localStorage has projectId)
+  useEffect(() => {
+    if (concepts.length > 0) return; // Already loaded
+    if (projectId) return; // Store has projectId but no concepts — let it settle
+
+    const savedId = localStorage.getItem('cbe_project_id');
+    if (!savedId) {
+      navigate('/', { replace: true });
+      return;
+    }
+
+    setRestoring(true);
+    useStore.getState().setProjectId(savedId);
+    fetchAndLoadProject(savedId).then(result => {
+      setRestoring(false);
+      if (!result) {
+        localStorage.removeItem('cbe_project_id');
+        navigate('/', { replace: true });
+      }
+    });
+  }, [concepts.length, projectId, navigate]);
+
   // Activate user state tracking and proactive engine
   useUserState();
   useProactive();
+
+  if (restoring) {
+    return (
+      <div className="w-full h-full flex items-center justify-center" style={{ background: '#0a0a1a' }}>
+        <div className="flex items-center gap-3">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ background: '#6366f1', animation: 'processing-dot 1.4s infinite' }}
+          />
+          <span className="text-sm font-medium" style={{ color: '#94a3b8' }}>
+            Restoring your codebase...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full relative" style={{ background: '#0a0a1a' }}>
       <TopBar />
       <GraphCanvas />
+      <GuidedOverlay />
       <InspectorPanel />
       <ExplorationProgress />
       <InsightCard />
       <ChatBar />
       <CodePanel />
       <Onboarding />
+      <CompletionSummary />
       <Toast />
     </div>
   );

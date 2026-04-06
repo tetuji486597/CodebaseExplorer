@@ -2,11 +2,11 @@ import { motion } from 'framer-motion';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const features = [
-  { emoji: '🎨', title: 'Concept Map', desc: 'AI extracts 8-15 human-readable concepts from your codebase. Each becomes an interactive bubble with an emoji, plain-English label, and connections.', span: true, color: '#06b6d4' },
-  { emoji: '📋', title: 'Files View', desc: 'Toggle to see every file, grouped by concept in soft colored clusters. See imports on tap.', color: '#8b5cf6' },
-  { emoji: '💬', title: 'Ask Claude Anything', desc: 'Chat bar at the bottom. Ask any question about the codebase in plain English.', color: '#60a5fa' },
-  { emoji: '🚶', title: 'Code Walkthrough', desc: "Tap 'Walk me through this file' for a split-screen with syntax highlighting + plain-English explanation.", color: '#f59e0b' },
-  { emoji: '⚡', title: 'Zero Config', desc: "Drop a .zip. That's it. No CLI. No setup. Works with any language.", color: '#10b981' },
+  { emoji: '🗺️', title: 'Architecture Map', desc: 'AI identifies architectural layers — API routes, state management, data models, services — and maps them as interactive nodes with real dependency relationships.', span: true, color: '#06b6d4' },
+  { emoji: '📂', title: 'Files View', desc: 'Toggle to see every file grouped by architectural role. Trace imports and see which modules depend on which.', color: '#8b5cf6' },
+  { emoji: '💬', title: 'Ask Claude Anything', desc: 'Chat bar at the bottom. Ask about design patterns, data flow, or why a class is structured a certain way — using the CS terms you already know.', color: '#60a5fa' },
+  { emoji: '🔍', title: 'Code Walkthrough', desc: "Click 'Walk me through this file' for a split-screen with syntax highlighting and explanations that connect to concepts like inheritance, middleware, and pub/sub.", color: '#f59e0b' },
+  { emoji: '⚡', title: 'Any Stack, Zero Config', desc: "Drop a .zip — React, Django, Spring Boot, Express, or anything else. No CLI. No setup.", color: '#10b981' },
   { emoji: '🔐', title: 'Private & Secure', desc: 'Your code never leaves your browser unless you choose to analyze it with AI.', color: '#ec4899' },
 ];
 
@@ -17,7 +17,7 @@ export default function FeaturesSection() {
         fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
         textAlign: 'center', marginBottom: '3rem', color: '#f8fafc',
       }}>
-        Everything you need to understand code
+        See how real projects are architected
       </h2>
       <motion.div
         className="lp-bento"

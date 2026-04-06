@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import useStore from '../../store/useStore';
+import { useNavigate } from 'react-router';
 import NavBar from './NavBar';
 import HeroSection from './HeroSection';
 import TrustBar from './TrustBar';
@@ -11,12 +11,12 @@ import CTASection from './CTASection';
 import Footer from './Footer';
 
 export default function LandingPage() {
-  const { setScreen } = useStore();
+  const navigate = useNavigate();
   const containerRef = useRef(null);
   const [navScrolled, setNavScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
-  const goToApp = useCallback(() => setScreen('upload'), [setScreen]);
+  const goToApp = useCallback(() => navigate('/upload'), [navigate]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -36,7 +36,7 @@ export default function LandingPage() {
         width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden',
         background: 'linear-gradient(180deg, #0a0a0f 0%, #0d1117 50%, #0a0a0f 100%)',
         color: '#f8fafc',
-        fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        fontFamily: "'JetBrains Mono','Fira Code',monospace",
         lineHeight: 1.6,
       }}
     >

@@ -6,8 +6,10 @@ import {
   X, ChevronRight, FileCode2, ArrowRight, ArrowLeft,
   Copy, Check, Key, Home, Image, User, Bell, FolderOpen, Search, Database, Mail, Box,
 } from 'lucide-react';
+import KeywordHighlighter from './KeywordHighlighter';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
+const LEVEL_LABELS = { beginner: 'Conceptual', intermediate: 'Applied', advanced: 'Under the Hood' };
 
 // Map concept IDs to Lucide icons
 const CONCEPT_ICON_MAP = {
@@ -27,7 +29,7 @@ export default function InspectorPanel() {
     openCodePanel, addChatMessage, setChatLoading, showToast,
   } = useStore();
 
-  const { estimateLevel } = useUserState();
+  const { estimateLevel, fireEngagement } = useUserState();
 
   const [explanation, setExplanation] = useState(null);
   const [streamingExplanation, setStreamingExplanation] = useState('');
@@ -231,7 +233,7 @@ export default function InspectorPanel() {
           >
             <span className="text-base mt-0.5 shrink-0" style={{ color: colors.accent || colors.stroke, opacity: 0.5 }}>{'\u201C'}</span>
             <p className="text-xs leading-relaxed italic" style={{ color: colors.text, opacity: 0.85 }}>
-              {node.metaphor}
+              <KeywordHighlighter text={node.metaphor} accentColor={colors.accent || colors.stroke} />
             </p>
           </div>
         )}
@@ -276,7 +278,7 @@ export default function InspectorPanel() {
                       color: activeLevel === level ? colors.text : '#64748b',
                     }}
                   >
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                    {LEVEL_LABELS[level]}
                   </button>
                 ))}
               </div>
@@ -292,14 +294,21 @@ export default function InspectorPanel() {
           ) : (
             <div>
               <p className="text-[13px] leading-[1.7]" style={{ color: '#cbd5e1' }}>
-                {descExpanded ? displayDescription : summary}
+                <KeywordHighlighter text={descExpanded ? displayDescription : summary} accentColor={colors.accent || colors.stroke} />
                 {streamingExplanation && (
                   <span className="inline-block w-1.5 h-3 ml-0.5 rounded-sm" style={{ background: colors.accent || colors.stroke, animation: 'processing-dot 1s infinite' }} />
                 )}
               </p>
               {hasMore && !streamingExplanation && (
                 <button
-                  onClick={() => setDescExpanded(v => !v)}
+                  onClick={() => {
+                    const next = !descExpanded;
+                    setDescExpanded(next);
+                    // Fire engagement when user reads the full explanation
+                    if (next && selectedNode?.type === 'concept') {
+                      fireEngagement(selectedNode.id, 'read_explanation');
+                    }
+                  }}
                   className="text-[11px] mt-2 font-medium transition-colors duration-200"
                   style={{ color: colors.accent || colors.stroke }}
                   onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
@@ -333,7 +342,7 @@ export default function InspectorPanel() {
               {deepExpanded && (
                 <div style={{ animation: 'fade-in 0.2s ease-out' }}>
                   <p className="text-[12px] leading-[1.7] mt-3" style={{ color: '#94a3b8' }}>
-                    {node.deep_explanation}
+                    <KeywordHighlighter text={node.deep_explanation} accentColor={colors.accent || colors.stroke} />
                   </p>
                 </div>
               )}
@@ -452,7 +461,9 @@ export default function InspectorPanel() {
                               animation: 'fade-in 0.2s ease-out',
                             }}
                           >
-                            <p className="text-[11px] leading-relaxed" style={{ color: '#94a3b8' }}>{edge.explanation}</p>
+                            <p className="text-[11px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                              <KeywordHighlighter text={edge.explanation} accentColor={colors.accent || colors.stroke} />
+                            </p>
                             <button
                               onClick={() => useStore.getState().setSelectedNode({ type: 'concept', id: otherId })}
                               className="text-[11px] mt-2 font-medium transition-all duration-200 active:scale-95 flex items-center gap-1"
@@ -505,7 +516,7 @@ export default function InspectorPanel() {
                         }}
                       >
                         <span className="mono text-[11px] font-medium" style={{ color: '#e2e8f0' }}>{name}</span>
-                        {desc && <p className="text-[11px] mt-1 leading-relaxed" style={{ color: '#64748b' }}>{desc}</p>}
+                        {desc && <p className="text-[11px] mt-1 leading-relaxed" style={{ color: '#64748b' }}><KeywordHighlighter text={desc} accentColor={colors.accent || colors.stroke} /></p>}
                       </div>
                     );
                   })}

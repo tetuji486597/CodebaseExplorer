@@ -369,7 +369,8 @@ export default function GraphCanvas() {
       const drawX = node.x;
       const drawY = node.y + floatY;
 
-      const nodeOpacity = selected && !isConnected ? 0.15 : 1;
+      const guidedMode = useStore.getState().guidedMode;
+      const nodeOpacity = selected && !isConnected ? (guidedMode ? 0.06 : 0.15) : 1;
 
       // Hover dimming for non-connected when hovering
       const hovered = hoverNodeRef.current;
@@ -741,7 +742,7 @@ export default function GraphCanvas() {
             maxWidth: '260px',
           }}>
             <div style={{
-              fontFamily: "'Inter', sans-serif",
+              fontFamily: "'JetBrains Mono', monospace",
               fontSize: '13px',
               fontWeight: 600,
               color: '#e2e8f0',
@@ -751,7 +752,7 @@ export default function GraphCanvas() {
             </div>
             {tooltip.summary && (
               <div style={{
-                fontFamily: "'Inter', sans-serif",
+                fontFamily: "'JetBrains Mono', monospace",
                 fontSize: '11px',
                 color: '#94a3b8',
                 lineHeight: 1.5,
@@ -761,7 +762,7 @@ export default function GraphCanvas() {
             )}
             {tooltip.importance && (
               <div style={{
-                fontFamily: "'Inter', sans-serif",
+                fontFamily: "'JetBrains Mono', monospace",
                 fontSize: '10px',
                 color: tooltip.importance === 'critical' ? '#ef4444' : tooltip.importance === 'important' ? '#f59e0b' : '#94a3b8',
                 textTransform: 'uppercase',

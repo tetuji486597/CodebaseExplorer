@@ -4,11 +4,11 @@ import { FolderOpen, Search, Puzzle, Lightbulb, BookOpen, Map } from 'lucide-rea
 
 const STEPS = [
   { text: 'Reading your files...', Icon: FolderOpen, stage: 0 },
-  { text: 'Analyzing code structure...', Icon: Search, stage: 2 },
-  { text: 'Synthesizing concepts...', Icon: Puzzle, stage: 3 },
-  { text: 'Adding depth & insights...', Icon: Lightbulb, stage: 4 },
+  { text: 'Analyzing code structure and dependencies...', Icon: Search, stage: 2 },
+  { text: 'Identifying architectural concepts...', Icon: Puzzle, stage: 3 },
+  { text: 'Mapping design patterns and depth levels...', Icon: Lightbulb, stage: 4 },
   { text: 'Indexing for search...', Icon: BookOpen, stage: 6 },
-  { text: 'Building your map...', Icon: Map, stage: 7 },
+  { text: 'Building your architecture map...', Icon: Map, stage: 7 },
 ];
 
 export default function ProcessingScreen() {
@@ -27,10 +27,10 @@ export default function ProcessingScreen() {
     } else {
       if (processingStatus.includes('Reading') || processingStatus.includes('Loading')) setActiveStep(0);
       else if (processingStatus.includes('Analyzing') || processingStatus.includes('Extract')) setActiveStep(1);
-      else if (processingStatus.includes('Synth') || processingStatus.includes('Finding')) setActiveStep(2);
-      else if (processingStatus.includes('depth') || processingStatus.includes('insight')) setActiveStep(3);
+      else if (processingStatus.includes('Identifying') || processingStatus.includes('Synth') || processingStatus.includes('Finding')) setActiveStep(2);
+      else if (processingStatus.includes('multi-level') || processingStatus.includes('depth') || processingStatus.includes('insight')) setActiveStep(3);
       else if (processingStatus.includes('Index') || processingStatus.includes('search')) setActiveStep(4);
-      else if (processingStatus.includes('Building') || processingStatus.includes('exploration')) setActiveStep(5);
+      else if (processingStatus.includes('Building') || processingStatus.includes('learning') || processingStatus.includes('exploration')) setActiveStep(5);
     }
   }, [processingStatus, pipelineProgress]);
 

@@ -69,8 +69,8 @@ export default function HeroSection({ onGetStarted, scrollProgress }) {
           transition={{ delay: 0.5, duration: 0.6 }}
           style={{ fontSize: '1.15rem', color: '#94a3b8', lineHeight: 1.7, marginBottom: '2.5rem' }}
         >
-          Drop a zip file. Get a beautiful visual map of every concept, file, and connection.
-          <br />Built for people who've never read a line of code.
+          Drop a zip file. Get an interactive architecture map showing design patterns, dependencies, and how everything connects.
+          <br />Built for CS students ready to understand real-world codebases.
         </motion.p>
 
         {/* CTAs */}

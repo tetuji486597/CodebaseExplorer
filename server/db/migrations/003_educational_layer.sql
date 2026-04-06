@@ -1,0 +1,4 @@
+-- See Supabase migration: add_educational_layer
+-- Tables: universal_concepts, curated_codebases, user_concept_progress, concept_universal_map
+-- Columns: projects.origin_context, projects.curated_codebase_id
+-- Seed: 25 universal concepts, 6 curated codebases, concept mappings

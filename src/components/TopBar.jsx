@@ -1,8 +1,10 @@
+import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
-import { Compass, FolderTree } from 'lucide-react';
+import { Compass, FolderTree, Route, Sparkles } from 'lucide-react';
 
 export default function TopBar() {
-  const { viewMode, setViewMode, concepts, exploredConcepts } = useStore();
+  const { viewMode, setViewMode, concepts, exploredConcepts, guidedMode, explorationPath, enterGuidedMode } = useStore();
+  const navigate = useNavigate();
   const exploredCount = exploredConcepts.size;
   const totalCount = concepts.length;
 
@@ -53,52 +55,96 @@ export default function TopBar() {
         )}
       </div>
 
-      {/* Center: Segmented Control */}
-      <div
-        className="flex rounded-xl overflow-hidden relative"
-        style={{
-          background: '#14142b',
-          border: '1px solid rgba(255,255,255,0.06)',
-          padding: '3px',
-        }}
-      >
-        {/* Sliding highlight */}
+      {/* Center: Segmented Control (hidden in guided mode) */}
+      {!guidedMode ? (
         <div
-          className="absolute top-[3px] rounded-lg transition-all duration-200 ease-out"
+          className="flex rounded-xl overflow-hidden relative"
           style={{
-            width: 'calc(50% - 3px)',
-            height: 'calc(100% - 6px)',
-            left: viewMode === 'concepts' ? '3px' : 'calc(50%)',
-            background: 'rgba(99, 102, 241, 0.15)',
-            border: '1px solid rgba(99, 102, 241, 0.2)',
-          }}
-        />
-        <button
-          onClick={() => setViewMode('concepts')}
-          className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
-          style={{
-            color: viewMode === 'concepts' ? '#a5b4fc' : '#64748b',
+            background: '#14142b',
+            border: '1px solid rgba(255,255,255,0.06)',
+            padding: '3px',
           }}
         >
-          <Compass size={13} />
-          Concepts
-        </button>
-        <button
-          onClick={() => setViewMode('files')}
-          className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
-          style={{
-            color: viewMode === 'files' ? '#a5b4fc' : '#64748b',
-          }}
-        >
-          <FolderTree size={13} />
-          Files
-        </button>
-      </div>
+          {/* Sliding highlight */}
+          <div
+            className="absolute top-[3px] rounded-lg transition-all duration-200 ease-out"
+            style={{
+              width: 'calc(50% - 3px)',
+              height: 'calc(100% - 6px)',
+              left: viewMode === 'concepts' ? '3px' : 'calc(50%)',
+              background: 'rgba(99, 102, 241, 0.15)',
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+            }}
+          />
+          <button
+            onClick={() => setViewMode('concepts')}
+            className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
+            style={{
+              color: viewMode === 'concepts' ? '#a5b4fc' : '#64748b',
+            }}
+          >
+            <Compass size={13} />
+            Concepts
+          </button>
+          <button
+            onClick={() => setViewMode('files')}
+            className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
+            style={{
+              color: viewMode === 'files' ? '#a5b4fc' : '#64748b',
+            }}
+          >
+            <FolderTree size={13} />
+            Files
+          </button>
+        </div>
+      ) : (
+        <div />
+      )}
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
+        {!guidedMode && explorationPath.length > 0 && (
+          <button
+            onClick={enterGuidedMode}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
+            style={{
+              color: '#a5b4fc',
+              background: 'rgba(99, 102, 241, 0.1)',
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+            }}
+          >
+            <Route size={13} />
+            Resume Tour
+          </button>
+        )}
         <button
-          onClick={() => useStore.getState().setScreen('upload')}
+          onClick={() => navigate('/profile')}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
+          style={{
+            color: '#94a3b8',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.color = '#e2e8f0';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+            e.currentTarget.style.color = '#94a3b8';
+          }}
+        >
+          <Sparkles size={12} />
+          Skills
+        </button>
+        <button
+          onClick={() => navigate('/')}
           className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
           style={{
             color: '#94a3b8',

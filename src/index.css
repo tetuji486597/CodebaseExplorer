@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Fira Mono', 'Roboto Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Fira Mono', 'Roboto Mono', monospace;
   --color-bg-dark: #0a0a1a;
   --color-bg-light: #FAFAF8;
   --color-panel-dark: #14142b;
@@ -82,7 +84,7 @@
 html, body, #root {
   width: 100%;
   height: 100%;
-  font-family: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Fira Mono', 'Roboto Mono', monospace;
 }
 
 /* Prevent scroll on explorer/canvas screens, allow on landing */
@@ -133,6 +135,11 @@ body {
 
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes keyword-tooltip-in {
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

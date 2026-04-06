@@ -7,10 +7,52 @@ import { embed } from '../rag/embedder.js';
 
 const app = new Hono();
 
+// Determine register from universal concept confidence
+async function getRegisterFromConfidence(
+  projectId: string,
+  conceptKey: string,
+  userId: string = 'anonymous'
+): Promise<'beginner' | 'intermediate' | 'advanced'> {
+  try {
+    // Find universal concepts mapped to this concept key
+    const { data: mappings } = await supabase
+      .from('concept_universal_map')
+      .select('universal_concept_id')
+      .or(`project_id.eq.${projectId},curated_codebase_id.not.is.null`)
+      .eq('concept_key', conceptKey);
+
+    if (!mappings || mappings.length === 0) return 'beginner';
+
+    const ucIds = mappings.map((m: any) => m.universal_concept_id);
+
+    const { data: progress } = await supabase
+      .from('user_concept_progress')
+      .select('confidence')
+      .eq('user_id', userId)
+      .in('concept_id', ucIds);
+
+    if (!progress || progress.length === 0) return 'beginner';
+
+    // Average confidence across mapped universal concepts
+    const avgConfidence = progress.reduce((sum: number, p: any) => sum + (p.confidence || 0), 0) / progress.length;
+
+    if (avgConfidence < 0.3) return 'beginner';
+    if (avgConfidence < 0.7) return 'intermediate';
+    return 'advanced';
+  } catch {
+    return 'beginner';
+  }
+}
+
 // POST /api/explain - RAG-powered explanations for nodes
 app.post('/', async (c) => {
-  const { projectId, conceptKey, filePath, userLevel } = await c.req.json();
-  const level = userLevel || 'beginner';
+  const { projectId, conceptKey, filePath, userLevel, userId } = await c.req.json();
+
+  // Determine level: explicit override > confidence-based > fallback
+  let level = userLevel || 'beginner';
+  if (!userLevel && conceptKey) {
+    level = await getRegisterFromConfidence(projectId, conceptKey, userId || 'anonymous');
+  }
 
   let question: string;
   let conceptFilter: string | undefined;
@@ -62,10 +104,10 @@ ${ch.content}
   return streamSSE(c, async (stream) => {
     try {
       const textStream = await streamClaude({
-        system: `You are explaining code to someone at a ${level} level.
-Reference specific files and line numbers from the provided code.
+        system: `You are explaining code to a CS student. Use register ${level === 'beginner' ? '0 (zero assumed knowledge): explain from first principles, no jargon, use analogies to everyday things' : level === 'intermediate' ? '1 (some familiarity): use correct terminology without defining basic concepts, explain how things are implemented here' : '2 (comfortable): go straight to implementation specifics, interesting decisions, and things worth watching out for'}.
+Reference specific files from the provided code.
 Never make up code that doesn't exist in the codebase.
-Be concise and use plain English.`,
+Be concise.`,
         messages: [
           {
             role: 'user',

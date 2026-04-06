@@ -9,6 +9,9 @@ import chatRoutes from './routes/chat.js';
 import explainRoutes from './routes/explain.js';
 import proactiveRoutes from './routes/proactive.js';
 import userStateRoutes from './routes/user-state.js';
+import githubRoutes from './routes/github.js';
+import curatedRoutes from './routes/curated.js';
+import skillProfileRoutes from './routes/skill-profile.js';
 
 const app = new Hono();
 
@@ -24,6 +27,9 @@ app.route('/api/chat', chatRoutes);
 app.route('/api/explain', explainRoutes);
 app.route('/api/proactive', proactiveRoutes);
 app.route('/api/user-state', userStateRoutes);
+app.route('/api/github', githubRoutes);
+app.route('/api/curated', curatedRoutes);
+app.route('/api/skill-profile', skillProfileRoutes);
 
 const port = parseInt(process.env.PORT || '3007');
 console.log(`Server starting on port ${port}`);

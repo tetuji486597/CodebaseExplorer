@@ -31,14 +31,14 @@ export async function runInsightGeneration(
         requires_understanding: string[];
       }>;
     }>({
-      system: `You are a senior engineer doing a code review of an unfamiliar codebase.
-Generate 10-20 insights about what you notice. Think about:
-- What would you notice first?
-- What would concern you?
-- What's clever or well-designed?
-- What's risky or could break?
-- What patterns are being used?
-- What's unnecessarily complex?
+      system: `You are a software architecture mentor helping a CS student understand a codebase they're seeing for the first time.
+Generate 10-20 insights that would help them learn. Think about:
+- What architectural patterns are being used, and how do they connect to CS concepts the student has learned?
+- What design decisions are worth understanding — why was this approach chosen over alternatives?
+- What are good examples of software engineering principles in action (separation of concerns, single responsibility, DRY)?
+- What's risky or fragile, and what would a more robust approach look like?
+- What's unnecessarily complex, and how could it be simplified?
+- What would be a good starting point for someone wanting to contribute to or modify this code?
 Respond with ONLY valid JSON, no markdown.`,
       prompt: `Review this codebase:
 
@@ -56,11 +56,11 @@ Return JSON with an "insights" array. Each insight needs: title, category (archi
       maxTokens: 4096,
     });
 
-    // Store insights
+    // Store insights (batch insert)
     const insights = result.insights || [];
     console.log(`Generated ${insights.length} insights`);
-    for (const insight of insights) {
-      await supabase.from('insights').insert({
+    if (insights.length > 0) {
+      const insightRows = insights.map((insight) => ({
         project_id: projectId,
         title: insight.title,
         category: insight.category,
@@ -70,7 +70,11 @@ Return JSON with an "insights" array. Each insight needs: title, category (archi
         related_file_paths: insight.related_file_paths,
         priority: insight.priority,
         requires_understanding: insight.requires_understanding,
-      });
+      }));
+      const { error } = await supabase.from('insights').insert(insightRows);
+      if (error) {
+        console.error('Failed to batch insert insights:', error);
+      }
     }
   } catch (err) {
     console.error('Insight generation failed:', err);

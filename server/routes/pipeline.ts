@@ -1,14 +1,40 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import { createHash } from 'crypto';
 import { supabase } from '../db/supabase.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
 
 const app = new Hono();
 
+function computeContentHash(fileContents: Record<string, string>): string {
+  const hash = createHash('sha256');
+  const sortedKeys = Object.keys(fileContents).sort();
+  for (const key of sortedKeys) {
+    hash.update(key);
+    hash.update(fileContents[key].substring(0, 200));
+  }
+  return hash.digest('hex');
+}
+
 // POST /api/pipeline/start - Kick off ingestion pipeline
 app.post('/start', async (c) => {
   const body = await c.req.json();
   const { fileTree, fileContents, importEdges, projectName } = body;
+
+  // Check for cached project with same content
+  const contentHash = computeContentHash(fileContents || {});
+  const { data: cached } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('content_hash', contentHash)
+    .eq('pipeline_status', 'complete')
+    .limit(1)
+    .single();
+
+  if (cached) {
+    console.log(`Cache hit for content hash ${contentHash}, returning project ${cached.id}`);
+    return c.json({ projectId: cached.id });
+  }
 
   // Create project row
   const { data: project, error } = await supabase
@@ -17,6 +43,7 @@ app.post('/start', async (c) => {
       name: projectName || 'Untitled Project',
       pipeline_status: 'pending',
       file_count: Object.keys(fileContents || {}).length,
+      content_hash: contentHash,
     })
     .select()
     .single();

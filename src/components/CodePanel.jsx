@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
+import KeywordHighlighter from './KeywordHighlighter';
 
 
 // Simple syntax highlighting
@@ -217,7 +218,9 @@ export default function CodePanel() {
             <>
               <div>
                 <div className="text-xs font-medium mb-1.5" style={{ color: '#888' }}>What this file does</div>
-                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>{explanation.whatItDoes}</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>
+                  <KeywordHighlighter text={explanation.whatItDoes} accentColor={colors.stroke} />
+                </p>
               </div>
 
               {explanation.keyFunctions.length > 0 && (
@@ -227,7 +230,9 @@ export default function CodePanel() {
                     {explanation.keyFunctions.map((fn, i) => (
                       <div key={i} className="p-2.5 rounded-lg" style={{ background: '#131311', border: '0.5px solid #282826' }}>
                         <div className="mono text-xs mb-1" style={{ color: colors.stroke }}>{fn.name}</div>
-                        <div className="text-xs" style={{ color: '#999' }}>{fn.explanation}</div>
+                        <div className="text-xs" style={{ color: '#999' }}>
+                          <KeywordHighlighter text={fn.explanation} accentColor={colors.stroke} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -236,12 +241,16 @@ export default function CodePanel() {
 
               <div>
                 <div className="text-xs font-medium mb-1.5" style={{ color: '#888' }}>What to watch out for</div>
-                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>{explanation.watchOut}</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>
+                  <KeywordHighlighter text={explanation.watchOut} accentColor={colors.stroke} />
+                </p>
               </div>
 
               <div>
                 <div className="text-xs font-medium mb-1.5" style={{ color: '#888' }}>How it connects</div>
-                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>{explanation.connections}</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#CCC' }}>
+                  <KeywordHighlighter text={explanation.connections} accentColor={colors.stroke} />
+                </p>
               </div>
             </>
           )}

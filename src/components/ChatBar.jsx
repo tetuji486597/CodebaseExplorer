@@ -237,7 +237,7 @@ export default function ChatBar() {
               onChange={e => setInput(e.target.value)}
               placeholder="Ask anything about this codebase..."
               className="flex-1 bg-transparent text-sm outline-none placeholder-slate-600"
-              style={{ color: '#e2e8f0', fontFamily: "'Inter', sans-serif" }}
+              style={{ color: '#e2e8f0', fontFamily: "'JetBrains Mono', monospace" }}
             />
             {input.trim() && (
               <button
