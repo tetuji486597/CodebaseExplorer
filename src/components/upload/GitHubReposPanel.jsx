@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { usePostHog } from '@posthog/react';
-import { Search } from 'lucide-react';
+import { Search, AlertTriangle, Loader2 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { supabase } from '../../lib/supabase';
 import { API_BASE } from '../../lib/api';
@@ -26,14 +26,15 @@ const LANGUAGE_COLORS = {
 };
 
 export default function GitHubReposPanel() {
-  const session = useStore(s => s.session);
+  const getGithubToken = useStore(s => s.getGithubToken);
   const setProjectId = useStore(s => s.setProjectId);
   const setProcessingStatus = useStore(s => s.setProcessingStatus);
   const navigate = useNavigate();
   const { startListening } = usePipelineListener();
   const posthog = usePostHog();
 
-  const hasGithub = !!session?.provider_token;
+  const githubToken = getGithubToken();
+  const hasGithub = !!githubToken;
 
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,9 +43,10 @@ export default function GitHubReposPanel() {
   const [analyzing, setAnalyzing] = useState(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [analyzeError, setAnalyzeError] = useState(null); // { repoFullName, message }
 
   const fetchRepos = useCallback(async (pageNum = 1) => {
-    const token = session?.provider_token;
+    const token = getGithubToken();
     if (!token) { setLoading(false); return; }
     try {
       const res = await fetch(
@@ -60,17 +62,16 @@ export default function GitHubReposPanel() {
       setRepos(prev => pageNum === 1 ? data : [...prev, ...data]);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
-  }, [session]);
+  }, [getGithubToken]);
 
   useEffect(() => { if (hasGithub) fetchRepos(1); else setLoading(false); }, [hasGithub, fetchRepos]);
 
   const handleAnalyze = async (repo) => {
-    const token = session?.provider_token;
+    const token = getGithubToken();
     if (!token) return;
     setAnalyzing(repo.full_name);
+    setAnalyzeError(null);
     posthog.capture('repo_uploaded', { source: 'github_repos' });
-    navigate('/processing', { replace: true });
-    setProcessingStatus(`Downloading ${repo.full_name}...`);
     try {
       const res = await fetch(`${API_BASE}/api/github/analyze`, {
         method: 'POST',
@@ -79,7 +80,9 @@ export default function GitHubReposPanel() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Server error: ${res.status}`);
+        setAnalyzeError({ repoFullName: repo.full_name, message: err.error || `Server error: ${res.status}` });
+        setAnalyzing(null);
+        return;
       }
       const { projectId, cached } = await res.json();
       setProjectId(projectId);
@@ -88,12 +91,14 @@ export default function GitHubReposPanel() {
       if (cached) {
         const ok = await fetchAndLoadProject(projectId);
         if (ok) navigate('/overview', { replace: true });
-        else setProcessingStatus('Failed: ' + 'Could not load cached project');
+        else { setAnalyzeError({ repoFullName: repo.full_name, message: 'Could not load cached project' }); setAnalyzing(null); }
       } else {
+        setProcessingStatus(`Analyzing ${repo.full_name}...`);
+        navigate('/processing', { replace: true });
         startListening(projectId);
       }
     } catch (err) {
-      setProcessingStatus('Failed: ' + err.message);
+      setAnalyzeError({ repoFullName: repo.full_name, message: err.message });
       setAnalyzing(null);
     }
   };
@@ -187,8 +192,8 @@ export default function GitHubReposPanel() {
           </p>
         )}
         {!loading && !error && filtered.map(repo => (
+          <div key={repo.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div
-            key={repo.id}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '10px 14px', borderRadius: 'var(--radius-sm)',
@@ -229,14 +234,31 @@ export default function GitHubReposPanel() {
               style={{
                 marginLeft: 10, padding: '6px 14px', borderRadius: 'var(--radius-sm)',
                 fontSize: 12, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
                 background: analyzing === repo.full_name ? 'var(--color-bg-sunken)' : 'var(--color-accent)',
                 color: analyzing === repo.full_name ? 'var(--color-text-tertiary)' : 'var(--color-text-inverse)',
                 border: 'none', cursor: analyzing === repo.full_name ? 'default' : 'pointer',
                 whiteSpace: 'nowrap', transition: `all var(--duration-base) var(--ease-out)`,
               }}
             >
-              {analyzing === repo.full_name ? 'Starting...' : 'Analyze'}
+              {analyzing === repo.full_name ? (
+                <><Loader2 size={12} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} /> Checking...</>
+              ) : 'Analyze'}
             </button>
+          </div>
+          {analyzeError?.repoFullName === repo.full_name && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+              background: 'color-mix(in srgb, var(--color-error) 8%, var(--color-bg-elevated))',
+              border: '1px solid color-mix(in srgb, var(--color-error) 25%, transparent)',
+            }}>
+              <AlertTriangle size={14} strokeWidth={1.75} style={{ color: 'var(--color-error)', flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12, color: 'var(--color-error)', lineHeight: 1.5, margin: 0 }}>
+                {analyzeError.message}
+              </p>
+            </div>
+          )}
           </div>
         ))}
 

@@ -9,7 +9,7 @@ const CATEGORY_COLORS = {
   pattern: 'var(--color-accent)',
   praise: 'var(--color-success)',
   suggestion: 'var(--color-warning)',
-  complexity: '#ec4899',
+  complexity: 'var(--color-info)',
 };
 
 const CATEGORY_ICONS = {
@@ -44,18 +44,18 @@ export default function InsightCard() {
         className="rounded-xl overflow-hidden"
         style={{
           background: 'var(--color-bg-elevated)',
-          border: `1px solid ${color}30`,
-          boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${color}10`,
+          border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
+          boxShadow: 'var(--shadow-lg)',
         }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: `1px solid ${color}20` }}
+          style={{ borderBottom: `1px solid color-mix(in srgb, ${color} 12%, transparent)` }}
         >
           <div className="flex items-center gap-2">
             <Icon size={14} style={{ color }} />
-            <span className="text-xs font-medium uppercase tracking-wide" style={{ color: color + 'cc' }}>
+            <span className="text-xs font-medium uppercase tracking-wide" style={{ color }}>
               {insightCard.category}
             </span>
           </div>
@@ -87,12 +87,12 @@ export default function InsightCard() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderTop: `1px solid ${color}10` }}>
+        <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderTop: `1px solid color-mix(in srgb, ${color} 6%, transparent)` }}>
           {!expanded && insightCard.detail && (
             <button
               onClick={() => setExpanded(true)}
               className="text-xs font-medium px-2.5 py-1 rounded-lg transition-all duration-200"
-              style={{ color, background: color + '15' }}
+              style={{ color, background: `color-mix(in srgb, ${color} 10%, transparent)` }}
             >
               Tell me more
             </button>

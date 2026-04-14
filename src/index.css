@@ -223,26 +223,187 @@ select:focus-visible,
 
 /* ==== Explorer grid layout ====
    InspectorPanel renders as an anchored popover outside this grid
-   (position: fixed). The grid lays out only the top bar, graph canvas,
-   and chat bar. The guided tour's navigation lives inside the popover
-   when a concept is selected. The graph fills all remaining vertical
-   space between top bar and chat. */
+   (position: fixed). The grid lays out only the top bar and graph canvas.
+   Chat is now a fixed side panel + command palette overlay. */
 .explorer-grid {
   display: grid;
   height: 100dvh;
   width: 100%;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 56px minmax(0, 1fr) auto;
+  grid-template-rows: 56px minmax(0, 1fr);
   grid-template-areas:
     "top"
-    "center"
-    "chat";
+    "center";
   background: var(--color-bg-base);
   position: relative;
 }
 .explorer-grid > .eg-top    { grid-area: top;    z-index: 2; }
 .explorer-grid > .eg-center { grid-area: center; overflow: hidden; position: relative; }
-.explorer-grid > .eg-chat   { grid-area: chat;   border-top: 1px solid var(--color-border-subtle); background: var(--color-bg-surface); }
+
+/* ==== Chat Panel (right-side slide-out) ==== */
+.chat-panel {
+  position: fixed;
+  right: 0;
+  top: 56px;
+  bottom: 0;
+  width: 400px;
+  z-index: 35;
+  background: var(--color-bg-surface);
+  border-left: 1px solid var(--color-border-subtle);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.chat-panel--open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.chat-panel-drag-handle {
+  display: none;
+}
+.chat-panel-resize-handle {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-panel-resize-handle:hover .chat-panel-resize-grip,
+.chat-panel-resize-handle:active .chat-panel-resize-grip {
+  opacity: 1;
+  background: var(--color-accent-soft);
+}
+.chat-panel-resize-grip {
+  width: 16px;
+  height: 32px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 150ms ease-out, background 150ms ease-out;
+  color: var(--color-text-tertiary);
+}
+.chat-panel-backdrop {
+  display: none;
+}
+
+/* Mobile chat panel → bottom sheet */
+@media (max-width: 767px) {
+  .chat-panel {
+    width: 100%;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 70dvh;
+    border-left: none;
+    border-top: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    transform: translateY(100%);
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+  }
+  .chat-panel--open {
+    transform: translateY(0);
+  }
+  .chat-panel-drag-handle {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 4px;
+    cursor: grab;
+  }
+  .chat-panel-resize-handle {
+    display: none;
+  }
+  .chat-panel-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 34;
+    background: rgba(0, 0, 0, 0.3);
+    animation: fade-in 200ms ease-out;
+  }
+}
+
+/* ==== Command Palette ==== */
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: min(18vh, 160px);
+  animation: fade-in 150ms ease-out;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.command-palette {
+  width: min(560px, calc(100% - 32px));
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-visible);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.04);
+  overflow: hidden;
+  animation: palette-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==== Chat FAB ==== */
+.chat-fab {
+  position: fixed;
+  bottom: clamp(16px, 4vw, 24px);
+  right: clamp(16px, 4vw, 24px);
+  z-index: 30;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+  transition: all 200ms ease-out;
+}
+.chat-fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+}
+.chat-fab:active {
+  transform: scale(0.95);
+}
+.chat-fab--unread {
+  animation: fab-pulse 2s ease-in-out infinite;
+}
+
+/* ==== Chat animations ==== */
+@keyframes chat-msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes palette-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes fab-pulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35); }
+  50%      { box-shadow: 0 4px 28px rgba(99, 102, 241, 0.55), 0 0 0 6px rgba(99, 102, 241, 0.1); }
+}
 
 /* Preview-return pill (appears when coming from app preview) */
 .preview-return-pill {

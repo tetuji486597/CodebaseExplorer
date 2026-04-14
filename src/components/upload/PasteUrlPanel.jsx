@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { usePostHog } from '@posthog/react';
-import { Link2, ArrowRight } from 'lucide-react';
+import { Link2, ArrowRight, Loader2 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { parseGithubUrl, toRepoFullName } from '../../lib/parseGithubUrl';
 import { API_BASE } from '../../lib/api';
@@ -13,7 +13,7 @@ export default function PasteUrlPanel() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const session = useStore(s => s.session);
+  const getGithubToken = useStore(s => s.getGithubToken);
   const setProjectId = useStore(s => s.setProjectId);
   const setProcessingStatus = useStore(s => s.setProcessingStatus);
   const { startListening } = usePipelineListener();
@@ -32,8 +32,6 @@ export default function PasteUrlPanel() {
     try {
       const repoFullName = toRepoFullName(parsed);
       posthog.capture('repo_uploaded', { source: 'paste_url' });
-      navigate('/processing', { replace: true });
-      setProcessingStatus(`Fetching ${repoFullName}...`);
 
       const res = await fetch(`${API_BASE}/api/github/analyze`, {
         method: 'POST',
@@ -41,13 +39,13 @@ export default function PasteUrlPanel() {
         body: JSON.stringify({
           repoFullName,
           ref: parsed.ref,
-          accessToken: session?.provider_token,
+          accessToken: getGithubToken(),
         }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to analyze repo' }));
-        setProcessingStatus(err.error || 'Failed to analyze repo');
+        setError(err.error || 'Failed to analyze repo');
         setLoading(false);
         return;
       }
@@ -59,13 +57,15 @@ export default function PasteUrlPanel() {
       if (cached) {
         const ok = await fetchAndLoadProject(projectId);
         if (ok) navigate('/overview', { replace: true });
-        else setProcessingStatus('Failed to load cached project');
+        else { setError('Failed to load cached project'); setLoading(false); }
       } else {
+        setProcessingStatus(`Analyzing ${repoFullName}...`);
+        navigate('/processing', { replace: true });
         startListening(projectId);
       }
     } catch (err) {
       console.error('GitHub analyze failed:', err);
-      setProcessingStatus('Failed to analyze repo: ' + err.message);
+      setError('Failed to analyze repo: ' + err.message);
       setLoading(false);
     }
   };
@@ -105,8 +105,17 @@ export default function PasteUrlPanel() {
             transition: `all var(--duration-base) var(--ease-out)`,
           }}
         >
-          Analyze
-          <ArrowRight size={13} strokeWidth={2} />
+          {loading ? (
+            <>
+              <Loader2 size={13} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} />
+              Checking...
+            </>
+          ) : (
+            <>
+              Analyze
+              <ArrowRight size={13} strokeWidth={2} />
+            </>
+          )}
         </button>
       </div>
       {error && (

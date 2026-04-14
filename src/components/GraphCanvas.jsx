@@ -839,7 +839,7 @@ export default function GraphCanvas() {
         style={{
           position: 'absolute',
           bottom: 16,
-          right: 16,
+          left: 16,
           display: 'flex',
           flexDirection: 'column',
           gap: 1,

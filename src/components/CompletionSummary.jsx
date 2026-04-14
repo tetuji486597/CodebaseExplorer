@@ -77,14 +77,14 @@ export default function CompletionSummary() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'var(--color-bg-elevated)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
     >
       <div
         className="w-full max-w-md mx-4 rounded-2xl p-7"
         style={{
           background: 'var(--color-bg-elevated)',
           border: '1px solid var(--color-border-visible)',
-          boxShadow: '0 8px 48px rgba(0,0,0,0.5)',
+          boxShadow: 'var(--shadow-lg)',
           animation: 'fade-in 0.4s ease-out',
         }}
       >
@@ -92,7 +92,7 @@ export default function CompletionSummary() {
         <div className="flex items-center gap-3 mb-5">
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.2)' }}
+            style={{ background: 'var(--color-success-soft)', border: '1px solid color-mix(in srgb, var(--color-success) 20%, transparent)' }}
           >
             <CheckCircle2 size={20} style={{ color: 'var(--color-success)' }} />
           </div>
@@ -118,9 +118,9 @@ export default function CompletionSummary() {
                   key={name}
                   className="text-[11px] px-2.5 py-1 rounded-lg font-medium"
                   style={{
-                    background: 'rgba(16, 185, 129, 0.1)',
+                    background: 'var(--color-success-soft)',
                     color: 'var(--color-success)',
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    border: '1px solid color-mix(in srgb, var(--color-success) 20%, transparent)',
                   }}
                 >
                   {name}
@@ -164,6 +164,8 @@ export default function CompletionSummary() {
               color: 'var(--color-accent-active)',
               border: '1px solid var(--color-border-strong)',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-text-inverse)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-accent-soft)'; e.currentTarget.style.color = 'var(--color-accent-active)'; }}
           >
             <Compass size={14} />
             Keep exploring this codebase
@@ -172,7 +174,7 @@ export default function CompletionSummary() {
             <button
               onClick={() => {
                 setSummary(null);
-                navigate('/library');
+                navigate('/upload');
               }}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 active:scale-[0.98]"
               style={{
@@ -181,7 +183,7 @@ export default function CompletionSummary() {
                 border: '1px solid var(--color-border-subtle)',
               }}
             >
-              Back to library
+              Explore another codebase
             </button>
             <button
               onClick={() => {

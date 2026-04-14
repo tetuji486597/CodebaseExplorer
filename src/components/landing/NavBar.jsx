@@ -130,7 +130,7 @@ export default function NavBar({ onGetStarted, scrolled }) {
         {user ? (
           <>
             <button
-              onClick={() => navigate('/repos')}
+              onClick={() => navigate('/settings')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -138,20 +138,21 @@ export default function NavBar({ onGetStarted, scrolled }) {
                 background: 'var(--color-accent-soft)',
                 color: 'var(--color-accent-active)',
                 border: '1px solid var(--color-border-strong)',
-                padding: '8px 14px',
-                borderRadius: 'var(--radius-md)',
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-pill)',
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: 'pointer',
                 transition: 'all .2s',
               }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-elevated)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-accent-soft)'; }}
             >
               <img
                 src={user.user_metadata?.avatar_url}
                 alt=""
-                style={{ width: 18, height: 18, borderRadius: '50%' }}
+                style={{ width: 22, height: 22, borderRadius: '50%' }}
               />
-              My repos
             </button>
             <button
               onClick={() => { signOut(); navigate('/'); }}

@@ -122,6 +122,33 @@ app.post('/start', async (c) => {
   return c.json({ projectId: project.id, cached: false });
 });
 
+// POST /api/pipeline/:id/cancel - Cancel a running pipeline
+app.post('/:id/cancel', async (c) => {
+  const projectId = c.req.param('id');
+  const { data: project } = await supabase
+    .from('projects')
+    .select('pipeline_status')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const terminal = ['complete', 'failed', 'cancelled', 'enriched'];
+  if (terminal.includes(project.pipeline_status)) {
+    return c.json({ status: project.pipeline_status, message: 'Pipeline already finished' });
+  }
+
+  await supabase
+    .from('projects')
+    .update({
+      pipeline_status: 'cancelled',
+      pipeline_progress: { message: 'Cancelled by user' },
+    })
+    .eq('id', projectId);
+
+  return c.json({ status: 'cancelled' });
+});
+
 // GET /api/pipeline/:id/stream - SSE stream of pipeline progress
 app.get('/:id/stream', async (c) => {
   const projectId = c.req.param('id');
@@ -151,7 +178,7 @@ app.get('/:id/stream', async (c) => {
           lastStatus = currentStatus;
         }
 
-        if (project.pipeline_status === 'complete' || project.pipeline_status === 'failed') {
+        if (['complete', 'failed', 'cancelled'].includes(project.pipeline_status)) {
           complete = true;
         }
       }

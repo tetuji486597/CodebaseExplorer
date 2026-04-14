@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { usePostHog } from '@posthog/react';
-import { BookOpen, Zap, Flame, Play, ExternalLink } from 'lucide-react';
+import { BookOpen, Zap, Flame, ExternalLink } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { fetchAndLoadProject } from '../../lib/loadProject';
 import { API_BASE } from '../../lib/api';
@@ -31,7 +31,6 @@ export default function CuratedPanel() {
 
   const handleLoad = async (cb) => {
     posthog.capture('repo_uploaded', { source: 'curated' });
-    if (cb.has_preview) { navigate(`/library/${cb.id}/preview`); return; }
     setLoadingId(cb.id);
     try {
       const res = await fetch(`${API_BASE}/api/curated/${cb.id}/load`, { method: 'POST' });
@@ -145,11 +144,6 @@ export default function CuratedPanel() {
 
             {/* Footer indicators */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
-              {cb.has_preview && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--color-accent)', fontWeight: 500 }}>
-                  <Play size={9} style={{ fill: 'var(--color-accent)' }} /> Preview
-                </span>
-              )}
               {cb.github_url && (
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center', gap: 3 }}>
                   <ExternalLink size={9} />

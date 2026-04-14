@@ -11,7 +11,6 @@ import {
   Eye, Compass,
 } from 'lucide-react';
 import KeywordHighlighter from './KeywordHighlighter';
-import BridgeBanner from './BridgeBanner';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const LEVEL_LABELS = { beginner: 'Conceptual', intermediate: 'Applied', advanced: 'Under the Hood' };
@@ -485,8 +484,6 @@ export default function InspectorPanel() {
             minHeight: 0,
           }}
         >
-          {selectedNode.type === 'concept' && <BridgeBanner />}
-
           {/* Guided tour stepper (when on-path) */}
           {isOnTourPath && (
             <div

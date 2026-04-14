@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Upload, Library, Link2, Play, FolderOpen } from 'lucide-react';
+import { Upload, Library, Link2, FolderOpen } from 'lucide-react';
 import useStore from '../store/useStore';
-import { sampleConcepts, sampleFiles, sampleEdges, sampleFileImports } from '../data/sampleData';
 import { usePipelineListener } from '../hooks/usePipelineListener';
+import { API_BASE } from '../lib/api';
+import { fetchAndLoadProject } from '../lib/loadProject';
 
 import SourceTabs from './upload/SourceTabs';
 import GitHubReposPanel from './upload/GitHubReposPanel';
 import ZipUploadPanel from './upload/ZipUploadPanel';
 import PasteUrlPanel from './upload/PasteUrlPanel';
 import CuratedPanel from './upload/CuratedPanel';
+import MyProjectsPanel from './upload/MyProjectsPanel';
 import BackBar from './BackBar';
 
 // Inline GitHub icon — lucide-react v1.7 doesn't ship one.
@@ -65,48 +67,38 @@ export default function UploadScreen() {
   });
 
   const handleTabChange = (tabId) => {
-    if (tabId === 'projects') {
-      navigate('/projects');
-      return;
-    }
     setActiveTab(tabId);
   };
 
-  // On mount, check for an in-progress pipeline and resume
+  // On mount, check for an in-progress pipeline and resume — but verify status first
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
     const savedProjectId = localStorage.getItem('cbe_active_project');
-    if (savedProjectId) {
-      navigate('/processing', { replace: true });
-      setProcessingStatus('Reconnecting to pipeline...');
-      setProjectId(savedProjectId);
-      startListening(savedProjectId);
-    }
-  }, []);
+    if (!savedProjectId) return;
 
-  const loadDemo = () => {
-    navigate('/processing', { replace: true });
-    setProcessingStatus('Loading demo...');
-    setTimeout(() => setProcessingStatus('Finding the concepts...'), 800);
-    setTimeout(() => setProcessingStatus('Building your map...'), 1600);
-    setTimeout(() => {
-      useStore.getState().setProjectMeta({
-        name: 'Instagram Clone (demo)',
-        summary: 'A full-stack social media application with authentication, a personalized feed, post creation with media uploads, notifications, and user profiles.',
-        framework: 'React',
-        language: 'JavaScript',
-        file_count: sampleFiles.length,
-      });
-      loadData({
-        concepts: sampleConcepts,
-        files: sampleFiles,
-        conceptEdges: sampleEdges,
-        fileImports: sampleFileImports,
-      });
-      navigate('/overview', { replace: true });
-    }, 2400);
-  };
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/pipeline/${savedProjectId}/status`);
+        const { status } = await res.json();
+
+        if (status === 'pending' || status === 'processing' || status?.startsWith('stage_')) {
+          navigate('/processing', { replace: true });
+          setProcessingStatus('Reconnecting to pipeline...');
+          setProjectId(savedProjectId);
+          startListening(savedProjectId);
+        } else if (status === 'complete' || status === 'enriched') {
+          localStorage.removeItem('cbe_active_project');
+          const ok = await fetchAndLoadProject(savedProjectId);
+          if (ok) navigate('/overview', { replace: true });
+        } else {
+          localStorage.removeItem('cbe_active_project');
+        }
+      } catch {
+        localStorage.removeItem('cbe_active_project');
+      }
+    })();
+  }, []);
 
   return (
     <div style={{
@@ -178,27 +170,10 @@ export default function UploadScreen() {
           {activeTab === 'repos' && <GitHubReposPanel />}
           {activeTab === 'zip' && <ZipUploadPanel />}
           {activeTab === 'curated' && <CuratedPanel />}
+          {activeTab === 'projects' && <MyProjectsPanel />}
         </div>
       </div>
 
-      {/* Demo link */}
-      <button
-        onClick={loadDemo}
-        style={{
-          marginTop: 'clamp(1.5rem, 3vw, 2rem)',
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--color-text-tertiary)', fontSize: 13,
-          fontFamily: 'inherit', padding: '8px 12px',
-          borderRadius: 'var(--radius-sm)',
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          transition: `color var(--duration-base) var(--ease-out)`,
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent)'; }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
-      >
-        <Play size={13} strokeWidth={2} />
-        Try the demo with a sample codebase
-      </button>
       </div>
     </div>
   );

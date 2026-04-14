@@ -43,14 +43,14 @@ export default function Onboarding() {
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center"
-      style={{ background: 'var(--color-bg-elevated)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
     >
       <div
         className="w-full max-w-sm mx-4 rounded-2xl p-8 text-center"
         style={{
           background: 'var(--color-bg-elevated)',
           border: '1px solid var(--color-border-visible)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          boxShadow: 'var(--shadow-lg)',
           animation: 'fade-in 0.3s ease-out',
         }}
       >
@@ -71,8 +71,8 @@ export default function Onboarding() {
         <div
           className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
           style={{
-            background: `${step.color}15`,
-            border: `1px solid ${step.color}25`,
+            background: `color-mix(in srgb, ${step.color} 10%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${step.color} 15%, transparent)`,
           }}
         >
           <step.Icon size={28} style={{ color: step.color }} />
@@ -95,10 +95,12 @@ export default function Onboarding() {
             onClick={next}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-95"
             style={{
-              background: 'var(--color-border-strong)',
-              color: 'var(--color-accent-active)',
-              border: '1px solid var(--color-border-strong)',
+              background: 'var(--color-accent)',
+              color: 'var(--color-text-inverse)',
+              border: '1px solid var(--color-accent)',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-accent-hover)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-accent)'; }}
           >
             {isLast ? 'Got it!' : 'Next'}
           </button>

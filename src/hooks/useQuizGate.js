@@ -9,6 +9,7 @@ export default function useQuizGate() {
     if (!projectId) return false;
 
     const store = useStore.getState();
+    if (store.quizDisabled) return false;
     store.setQuizLoading(true);
 
     try {

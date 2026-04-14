@@ -15,6 +15,7 @@ export function usePipelineListener() {
   const startListening = useCallback((projectId, retryCount = 0) => {
     const maxRetries = 10;
     const es = new EventSource(`${API_BASE}/api/pipeline/${projectId}/stream`);
+    useStore.getState().setSseCleanup(() => { es.close(); });
 
     es.addEventListener('progress', (e) => {
       const { status, progress } = JSON.parse(e.data);
@@ -34,6 +35,12 @@ export function usePipelineListener() {
       if (status === 'failed') {
         localStorage.removeItem('cbe_active_project');
         setProcessingStatus('Pipeline failed. Please try again.');
+        useStore.getState().setProcessingError({ message: 'Pipeline failed. Please try again.' });
+        es.close();
+      }
+
+      if (status === 'cancelled') {
+        localStorage.removeItem('cbe_active_project');
         es.close();
       }
     });

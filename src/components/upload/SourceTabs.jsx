@@ -60,8 +60,10 @@ export default function SourceTabs({ tabs, activeTab, onTabChange }) {
             style={{
               position: 'relative',
               zIndex: 1,
+              flex: 1,
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 7,
               padding: '10px 16px',
               minHeight: 44,

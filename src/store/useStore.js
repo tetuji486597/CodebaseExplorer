@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { API_BASE } from '../lib/api';
 
 const useStore = create((set, get) => ({
   // Auth state
@@ -11,7 +12,12 @@ const useStore = create((set, get) => ({
   setAuthLoading: (loading) => set({ authLoading: loading }),
   signOut: async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('cbe_github_token');
     set({ user: null, session: null });
+  },
+  getGithubToken: () => {
+    const session = get().session;
+    return session?.provider_token || localStorage.getItem('cbe_github_token');
   },
 
   // View mode
@@ -58,15 +64,23 @@ const useStore = create((set, get) => ({
   // Chat
   chatMessages: [],
   chatLoading: false,
+  chatPanelOpen: false,
+  commandPaletteOpen: false,
+  chatStreamingText: '',
   addChatMessage: (message) => set(state => ({
     chatMessages: [...state.chatMessages, message]
   })),
   setChatLoading: (loading) => set({ chatLoading: loading }),
-  clearChat: () => set({ chatMessages: [], chatLoading: false }),
+  setChatPanelOpen: (open) => set({ chatPanelOpen: open }),
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  setChatStreamingText: (text) => set({ chatStreamingText: text }),
+  clearChat: () => set({ chatMessages: [], chatLoading: false, chatStreamingText: '' }),
 
   // Processing status
   processingStatus: '',
   setProcessingStatus: (status) => set({ processingStatus: status }),
+  processingError: null,
+  setProcessingError: (err) => set({ processingError: err }),
 
   // Onboarding
   showOnboarding: true,
@@ -103,8 +117,14 @@ const useStore = create((set, get) => ({
 
   // Shared depth level across Inspector + GuidedOverlay
   // ('beginner' | 'intermediate' | 'advanced')
-  activeDepthLevel: 'beginner',
-  setActiveDepthLevel: (level) => set({ activeDepthLevel: level }),
+  activeDepthLevel: (() => {
+    if (typeof window === 'undefined') return 'beginner';
+    try { return window.localStorage?.getItem('cbe_depth_level') || 'beginner'; } catch { return 'beginner'; }
+  })(),
+  setActiveDepthLevel: (level) => {
+    try { window.localStorage?.setItem('cbe_depth_level', level); } catch {}
+    set({ activeDepthLevel: level });
+  },
 
   // Graph layout positions (managed by d3-force, stored here for persistence)
   nodePositions: {},
@@ -113,10 +133,27 @@ const useStore = create((set, get) => ({
   // Pipeline state
   projectId: null,
   setProjectId: (id) => set({ projectId: id }),
-  pipelineStatus: null, // null | 'pending' | 'processing' | 'stage_N' | 'complete' | 'failed'
+  pipelineStatus: null, // null | 'pending' | 'processing' | 'stage_N' | 'complete' | 'failed' | 'cancelled'
   pipelineProgress: null, // { stage, total_stages, message }
   setPipelineStatus: (status) => set({ pipelineStatus: status }),
   setPipelineProgress: (progress) => set({ pipelineProgress: progress }),
+
+  // SSE cleanup (set by usePipelineListener)
+  _sseCleanup: null,
+  setSseCleanup: (fn) => set({ _sseCleanup: fn }),
+
+  // Cancel an in-progress pipeline
+  cancelPipeline: async () => {
+    const { projectId, _sseCleanup } = get();
+    if (_sseCleanup) _sseCleanup();
+    if (projectId) {
+      try {
+        await fetch(`${API_BASE}/api/pipeline/${projectId}/cancel`, { method: 'POST' });
+      } catch (e) { console.error('Cancel failed:', e); }
+    }
+    localStorage.removeItem('cbe_active_project');
+    get().resetProject();
+  },
 
   // Proactive UI state
   pulsingNodeId: null,
@@ -126,7 +163,8 @@ const useStore = create((set, get) => ({
   connectionHighlight: null,
   setConnectionHighlight: (id) => set({ connectionHighlight: id }),
   suggestionBanner: null,
-  setSuggestionBanner: (text) => set({ suggestionBanner: text }),
+  suggestionBannerAction: null, // { action, target_id }
+  setSuggestionBanner: (text, action) => set({ suggestionBanner: text, suggestionBannerAction: action || null }),
   explorationProgress: 0,
   setExplorationProgress: (progress) => set({ explorationProgress: progress }),
 
@@ -189,6 +227,11 @@ const useStore = create((set, get) => ({
   },
 
   // Quiz state
+  quizDisabled: JSON.parse(localStorage.getItem('cbe_quiz_disabled') || 'false'),
+  setQuizDisabled: (disabled) => {
+    localStorage.setItem('cbe_quiz_disabled', JSON.stringify(disabled));
+    set({ quizDisabled: disabled });
+  },
   quizGateActive: false,
   quizGateQuestions: [],
   quizGateType: null,
@@ -220,29 +263,21 @@ const useStore = create((set, get) => ({
   curatedCodebaseId: null,
   setCuratedCodebaseId: (id) => set({ curatedCodebaseId: id }),
 
-  // App-first preview state
-  appPreviewData: null,
-  setAppPreviewData: (data) => set({ appPreviewData: data }),
-  previewBridgeFrom: null, // { conceptKey, narrationTitle, previewId }
-  setPreviewBridgeFrom: (ctx) => set({ previewBridgeFrom: ctx }),
-  clearPreviewBridge: () => set({ previewBridgeFrom: null }),
-
   // Reset all project-related state for clean project switching
   resetProject: () => set({
     concepts: [], files: [], conceptEdges: [], fileImports: [],
     projectMeta: null, projectId: null,
-    pipelineStatus: null, pipelineProgress: null,
+    pipelineStatus: null, pipelineProgress: null, processingError: null,
     selectedNode: null, showInspector: false,
-    chatMessages: [], chatLoading: false,
+    chatMessages: [], chatLoading: false, chatPanelOpen: false, commandPaletteOpen: false, chatStreamingText: '',
     guidedMode: false, guidedPosition: 0, explorationPath: [],
     exploredConcepts: new Set(),
     explorationProgress: 0, userState: null,
     insightCard: null, pulsingNodeId: null, connectionHighlight: null,
-    suggestionBanner: null, insights: [],
+    suggestionBanner: null, suggestionBannerAction: null, insights: [],
     quizGateActive: false, quizGateQuestions: [], quizGateType: null,
     quizCurrentIndex: 0, quizAnswers: [], quizStats: {},
-    curatedCodebaseId: null, appPreviewData: null,
-    previewBridgeFrom: null,
+    curatedCodebaseId: null,
     showCodePanel: false, codePanelFileId: null,
     showOnboarding: true, onboardingStep: 0,
     toast: null,

@@ -9,10 +9,8 @@ import UploadScreen from './UploadScreen';
 import ProcessingScreen from './ProcessingScreen';
 import BigPictureScreen from './BigPictureScreen';
 import ExplorerView from './ExplorerView';
-import CuratedLibrary from './CuratedLibrary';
-import AppPreviewScreen from './AppPreviewScreen';
 import ComprehensionProfile from './ComprehensionProfile';
-import RepoSelectScreen from './RepoSelectScreen';
+import SettingsScreen from './SettingsScreen';
 import MyProjects from './MyProjects';
 
 export default function AppRoutes() {
@@ -39,6 +37,9 @@ export default function AppRoutes() {
       setUser(session?.user ?? null);
       setAuthLoading(false);
 
+      if (session?.provider_token) {
+        localStorage.setItem('cbe_github_token', session.provider_token);
+      }
       if (session?.user) {
         posthog.identify(session.user.id, { email: session.user.email });
       }
@@ -48,11 +49,15 @@ export default function AppRoutes() {
       setSession(session);
       setUser(session?.user ?? null);
 
+      if (session?.provider_token) {
+        localStorage.setItem('cbe_github_token', session.provider_token);
+      }
       if (_event === 'SIGNED_IN' && session?.user) {
         posthog.identify(session.user.id, { email: session.user.email });
         posthog.capture('user_signed_in');
       }
       if (_event === 'SIGNED_OUT') {
+        localStorage.removeItem('cbe_github_token');
         posthog.capture('user_signed_out');
         posthog.reset();
       }
@@ -63,7 +68,7 @@ export default function AppRoutes() {
 
   // Scrollable pages vs fixed-viewport
   useEffect(() => {
-    const scrollableRoutes = ['/', '/upload', '/library', '/profile', '/overview', '/projects'];
+    const scrollableRoutes = ['/', '/upload', '/profile', '/overview', '/projects', '/settings'];
     if (scrollableRoutes.includes(location.pathname)) {
       document.body.classList.remove('no-scroll');
     } else {
@@ -80,10 +85,8 @@ export default function AppRoutes() {
         <Route path="/processing" element={<ProcessingScreen />} />
         <Route path="/overview" element={<BigPictureScreen />} />
         <Route path="/explorer" element={<ExplorerView />} />
-        <Route path="/library" element={<CuratedLibrary />} />
-        <Route path="/library/:id/preview" element={<AppPreviewScreen />} />
         <Route path="/profile" element={<ComprehensionProfile />} />
-        <Route path="/repos" element={<RepoSelectScreen />} />
+        <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/projects" element={<MyProjects />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

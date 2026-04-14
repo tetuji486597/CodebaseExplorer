@@ -74,7 +74,7 @@ function MiniConstellation({ concepts, edges }) {
         className="absolute inset-0 pointer-events-none z-10"
         style={{
           background:
-            'radial-gradient(ellipse 60% 50% at 50% 50%, transparent 40%, #0a0a1a 100%)',
+            'radial-gradient(ellipse 60% 50% at 50% 50%, transparent 40%, var(--color-bg-base) 100%)',
         }}
       />
 
@@ -139,7 +139,7 @@ function MiniConstellation({ concepts, edges }) {
               x={n.x}
               y={n.y + n.r + 12}
               textAnchor="middle"
-              fill="rgba(226,232,240,0.4)"
+              fill="var(--color-text-tertiary)"
               fontSize="8"
               fontFamily="'JetBrains Mono', monospace"
               style={{
@@ -207,15 +207,6 @@ function ConceptCard({ concept, index }) {
   );
 }
 
-const DEMO_META = {
-  name: 'Instagram Clone',
-  summary:
-    'A full-stack social media application with user authentication, a personalized feed, post creation with media uploads, real-time notifications, and user profiles with social graph features.',
-  framework: 'React',
-  language: 'JavaScript',
-  file_count: 24,
-};
-
 export default function BigPictureScreen() {
   const navigate = useNavigate();
   const concepts = useStore((s) => s.concepts);
@@ -246,7 +237,7 @@ export default function BigPictureScreen() {
     });
   }, [concepts.length, projectId, navigate]);
 
-  const meta = projectMeta || DEMO_META;
+  const meta = projectMeta || {};
 
   const topConcepts = useMemo(() => {
     return [...concepts]
@@ -395,14 +386,14 @@ export default function BigPictureScreen() {
           className="flex items-center gap-2 rounded-xl font-medium transition-all duration-200 active:scale-[0.97] cursor-pointer"
           style={{
             background: 'var(--color-accent)',
-            color: '#fff',
+            color: 'var(--color-text-inverse)',
             padding: '14px 32px',
             fontSize: '0.95rem',
             animation: 'fade-in 0.6s ease-out 0.8s both, cta-glow 3s ease-in-out infinite 1.4s',
             border: 'none',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--color-accent)';
+            e.currentTarget.style.background = 'var(--color-accent-hover)';
             e.currentTarget.style.transform = 'scale(1.03)';
           }}
           onMouseLeave={(e) => {
@@ -418,7 +409,7 @@ export default function BigPictureScreen() {
         <p
           className="text-center"
           style={{
-            color: '#3b3b5c',
+            color: 'var(--color-text-tertiary)',
             fontSize: '0.7rem',
             animation: 'fade-in 0.5s ease-out 1s both',
           }}

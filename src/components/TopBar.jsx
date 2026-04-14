@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import posthog from '../lib/posthog';
 import useStore from '../store/useStore';
-import { Compass, FolderTree, Route, User, Sun, Moon, Home, FolderOpen } from 'lucide-react';
+import { Compass, FolderTree, Route, User, Sun, Moon, Home, Settings } from 'lucide-react';
 
 export default function TopBar() {
   const viewMode = useStore(s => s.viewMode);
@@ -161,36 +161,34 @@ export default function TopBar() {
 
       {/* Right: Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-        {user && (
-          <button
-            onClick={() => navigate('/projects')}
-            aria-label="My projects"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 'var(--radius-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              border: '1px solid transparent',
-              color: 'var(--color-text-secondary)',
-              cursor: 'pointer',
-              transition: `all var(--duration-base) var(--ease-out)`,
-              flexShrink: 0,
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'var(--color-accent-soft)';
-              e.currentTarget.style.color = 'var(--color-accent-active)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--color-text-secondary)';
-            }}
-          >
-            <FolderOpen size={15} strokeWidth={1.75} />
-          </button>
-        )}
+        <button
+          onClick={() => navigate('/settings')}
+          aria-label="Settings"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: '1px solid transparent',
+            color: 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            transition: `all var(--duration-base) var(--ease-out)`,
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--color-accent-soft)';
+            e.currentTarget.style.color = 'var(--color-accent-active)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
+          }}
+        >
+          <Settings size={15} strokeWidth={1.75} />
+        </button>
         {!guidedMode && explorationPath.length > 0 && (
           <button
             onClick={enterGuidedMode}

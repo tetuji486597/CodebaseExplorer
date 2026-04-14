@@ -14,6 +14,15 @@ export interface PipelineInput {
   importEdges: Array<{ source: string; target: string }>;
 }
 
+async function isCancelled(projectId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('projects')
+    .select('pipeline_status')
+    .eq('id', projectId)
+    .single();
+  return data?.pipeline_status === 'cancelled';
+}
+
 async function updateProgress(projectId: string, stage: number, message: string, status?: string) {
   await supabase
     .from('projects')
@@ -68,6 +77,12 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
       await supabase.from('files').insert(fileRows.slice(i, i + 50));
     }
 
+    // Check for cancellation before expensive AI stages
+    if (await isCancelled(projectId)) {
+      console.log(`Pipeline cancelled for project ${projectId} after stage 1`);
+      return;
+    }
+
     // Filter out low-value files from AI analysis (still stored in DB above)
     const analysisContents = filterForAnalysis(input.fileContents);
     console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
@@ -89,11 +104,21 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
     const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
     console.log(`[timing] Stage 2 (file analysis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
 
+    if (await isCancelled(projectId)) {
+      console.log(`Pipeline cancelled for project ${projectId} after stage 2`);
+      return;
+    }
+
     // Stage 3: Concept synthesis
     await updateProgress(projectId, 3, 'Identifying architectural concepts...');
     stageStart = Date.now();
     const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
     console.log(`[timing] Stage 3 (concept synthesis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
+
+    if (await isCancelled(projectId)) {
+      console.log(`Pipeline cancelled for project ${projectId} after stage 3`);
+      return;
+    }
 
     // Generate exploration path deterministically (no API call needed)
     const explorationPath = synthesis.concepts

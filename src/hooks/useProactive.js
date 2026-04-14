@@ -31,7 +31,7 @@ export default function useProactive() {
       switch (action.action) {
         case 'highlight_concept':
           setPulsingNodeId(action.target_id);
-          if (action.message) setSuggestionBanner(action.message);
+          if (action.message) setSuggestionBanner(action.message, { action: action.action, target_id: action.target_id });
           break;
         case 'show_insight': {
           const insight = insights.find(i => i.id === action.target_id);
@@ -48,10 +48,10 @@ export default function useProactive() {
         }
         case 'suggest_connection':
           setConnectionHighlight(action.target_id);
-          if (action.message) setSuggestionBanner(action.message);
+          if (action.message) setSuggestionBanner(action.message, { action: action.action, target_id: action.target_id });
           break;
         case 'deepen_current':
-          if (action.message) setSuggestionBanner(action.message);
+          if (action.message) setSuggestionBanner(action.message, { action: action.action, target_id: action.target_id });
           break;
         case 'show_summary':
           if (action.message) setSuggestionBanner(action.message);

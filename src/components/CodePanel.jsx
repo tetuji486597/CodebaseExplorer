@@ -77,17 +77,6 @@ export default function CodePanel() {
           setExplanation({ whatItDoes: file.description || 'Unable to load explanation.', keyFunctions: [], watchOut: '', connections: '' });
         }
       })();
-    } else {
-      // Demo mode fallback
-      setExplanation({
-        whatItDoes: file.description || `This file handles functionality related to ${concept?.name || 'the application'}.`,
-        keyFunctions: (file.exports || []).map(exp => ({
-          name: exp,
-          explanation: `Handles ${exp.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} operations for the ${concept?.name || 'app'}.`,
-        })),
-        watchOut: `This file is part of the ${concept?.name || 'core'} system.`,
-        connections: `This file works with other files in the ${concept?.name || 'same'} concept area.`,
-      });
     }
   }, [file, concept, projectId]);
 

@@ -5,7 +5,8 @@ import TopBar from './TopBar';
 import GraphCanvas from './GraphCanvas';
 import InspectorPanel from './InspectorPanel';
 import GuidedOverlay from './GuidedOverlay';
-import ChatBar from './ChatBar';
+import ChatPanel from './ChatPanel';
+import CommandPalette from './CommandPalette';
 import CodePanel from './CodePanel';
 import Onboarding from './Onboarding';
 import InsightCard from './InsightCard';
@@ -16,7 +17,7 @@ import useProactive from '../hooks/useProactive';
 import useEnrichmentPoller from '../hooks/useEnrichmentPoller';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
-import { ArrowLeft } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 
 function Toast() {
   const toast = useStore(s => s.toast);
@@ -50,11 +51,25 @@ export default function ExplorerView() {
   const posthog = usePostHog();
   const concepts = useStore(s => s.concepts);
   const projectId = useStore(s => s.projectId);
-  const previewBridgeFrom = useStore(s => s.previewBridgeFrom);
-  const clearPreviewBridge = useStore(s => s.clearPreviewBridge);
   const showInspector = useStore(s => s.showInspector);
   const guidedMode = useStore(s => s.guidedMode);
+  const chatPanelOpen = useStore(s => s.chatPanelOpen);
+  const setChatPanelOpen = useStore(s => s.setChatPanelOpen);
+  const setCommandPaletteOpen = useStore(s => s.setCommandPaletteOpen);
+  const chatMessages = useStore(s => s.chatMessages);
   const [restoring, setRestoring] = useState(false);
+
+  // Global Cmd+K / Ctrl+K shortcut
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setCommandPaletteOpen]);
 
   useEffect(() => { posthog.capture('explorer_entered'); }, []);
 
@@ -113,7 +128,27 @@ export default function ExplorerView() {
       <GraphCanvas />
       <InspectorPanel />
       <GuidedOverlay />
-      <ChatBar />
+
+      {/* Chat system */}
+      <ChatPanel />
+      <CommandPalette />
+
+      {/* Chat FAB */}
+      <button
+        className={`chat-fab ${chatMessages.length > 0 && !chatPanelOpen ? 'chat-fab--unread' : ''}`}
+        onClick={() => {
+          if (chatPanelOpen) {
+            setChatPanelOpen(false);
+          } else if (chatMessages.length > 0) {
+            setChatPanelOpen(true);
+          } else {
+            setCommandPaletteOpen(true);
+          }
+        }}
+        aria-label="Open chat"
+      >
+        <MessageSquare size={18} strokeWidth={1.75} />
+      </button>
 
       {/* Floating / overlay elements (above the grid) */}
       <ExplorationProgress />
@@ -123,20 +158,6 @@ export default function ExplorerView() {
       <CompletionSummary />
       <Toast />
 
-      {/* Back to preview floating button */}
-      {previewBridgeFrom?.previewId && (
-        <button
-          onClick={() => {
-            const previewId = previewBridgeFrom.previewId;
-            clearPreviewBridge();
-            navigate(`/library/${previewId}/preview`);
-          }}
-          className="preview-return-pill"
-        >
-          <ArrowLeft size={13} />
-          Back to app preview
-        </button>
-      )}
     </div>
   );
 }
