@@ -316,6 +316,13 @@ select:focus-visible,
   to   { transform: rotate(360deg); }
 }
 
+/* ==== Processing screen ==== */
+.progress-ring-circle {
+  transition: stroke-dashoffset 0.8s var(--ease-out);
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
 /* ==== Responsive typography base ==== */
 @media (max-width: 480px) {
   html { font-size: 15px; }
