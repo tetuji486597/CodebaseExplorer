@@ -43,11 +43,13 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
         throw new Error('No tool_use response from Claude');
       }
 
-      return toolBlock.input as T;
+      const input = toolBlock.input as T;
+      console.log(`[claude] ${opts.schemaName} response keys: ${Object.keys(input as any || {}).join(', ')}`);
+      return input;
     } catch (err: any) {
       if (err?.status === 429 && attempt < maxRetries - 1) {
-        const retryAfter = parseInt(err?.headers?.get?.('retry-after') || '65', 10);
-        const waitTime = Math.max(retryAfter, 65) * 1000;
+        const retryAfter = parseInt(err?.headers?.get?.('retry-after') || '5', 10);
+        const waitTime = retryAfter * 1000;
         console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
         await new Promise((r) => setTimeout(r, waitTime));
         continue;

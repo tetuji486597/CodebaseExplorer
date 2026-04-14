@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { usePostHog } from '@posthog/react';
 import TopBar from './TopBar';
 import GraphCanvas from './GraphCanvas';
 import InspectorPanel from './InspectorPanel';
@@ -12,8 +13,10 @@ import ExplorationProgress from './ExplorationProgress';
 import CompletionSummary from './CompletionSummary';
 import useUserState from '../hooks/useUserState';
 import useProactive from '../hooks/useProactive';
+import useEnrichmentPoller from '../hooks/useEnrichmentPoller';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
+import { ArrowLeft } from 'lucide-react';
 
 function Toast() {
   const toast = useStore(s => s.toast);
@@ -27,14 +30,14 @@ function Toast() {
       <div
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium"
         style={{
-          background: '#1e1e3a',
-          color: '#e2e8f0',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          background: 'var(--color-bg-elevated)',
+          color: 'var(--color-text-primary)',
+          border: '1px solid var(--color-border-visible)',
+          boxShadow: 'var(--shadow-lg)',
         }}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M3.5 7L6 9.5L10.5 4.5" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3.5 7L6 9.5L10.5 4.5" stroke="var(--color-success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
         {toast}
       </div>
@@ -44,9 +47,16 @@ function Toast() {
 
 export default function ExplorerView() {
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const concepts = useStore(s => s.concepts);
   const projectId = useStore(s => s.projectId);
+  const previewBridgeFrom = useStore(s => s.previewBridgeFrom);
+  const clearPreviewBridge = useStore(s => s.clearPreviewBridge);
+  const showInspector = useStore(s => s.showInspector);
+  const guidedMode = useStore(s => s.guidedMode);
   const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => { posthog.capture('explorer_entered'); }, []);
 
   // Restore project data on refresh (store is empty but localStorage has projectId)
   useEffect(() => {
@@ -70,19 +80,20 @@ export default function ExplorerView() {
     });
   }, [concepts.length, projectId, navigate]);
 
-  // Activate user state tracking and proactive engine
+  // Activate user state tracking, proactive engine, and enrichment polling
   useUserState();
   useProactive();
+  useEnrichmentPoller();
 
   if (restoring) {
     return (
-      <div className="w-full h-full flex items-center justify-center" style={{ background: '#0a0a1a' }}>
+      <div className="w-full h-full flex items-center justify-center" style={{ background: 'var(--color-bg-base)' }}>
         <div className="flex items-center gap-3">
           <div
             className="w-2 h-2 rounded-full"
-            style={{ background: '#6366f1', animation: 'processing-dot 1.4s infinite' }}
+            style={{ background: 'var(--color-accent)', animation: 'processing-dot 1.4s infinite' }}
           />
-          <span className="text-sm font-medium" style={{ color: '#94a3b8' }}>
+          <span className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
             Restoring your codebase...
           </span>
         </div>
@@ -90,19 +101,42 @@ export default function ExplorerView() {
     );
   }
 
+  const gridClasses = [
+    'explorer-grid',
+    showInspector ? 'inspector-open' : 'no-inspector',
+    guidedMode ? 'guided-on' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="w-full h-full relative" style={{ background: '#0a0a1a' }}>
+    <div className={gridClasses}>
       <TopBar />
       <GraphCanvas />
-      <GuidedOverlay />
       <InspectorPanel />
+      <GuidedOverlay />
+      <ChatBar />
+
+      {/* Floating / overlay elements (above the grid) */}
       <ExplorationProgress />
       <InsightCard />
-      <ChatBar />
       <CodePanel />
       <Onboarding />
       <CompletionSummary />
       <Toast />
+
+      {/* Back to preview floating button */}
+      {previewBridgeFrom?.previewId && (
+        <button
+          onClick={() => {
+            const previewId = previewBridgeFrom.previewId;
+            clearPreviewBridge();
+            navigate(`/library/${previewId}/preview`);
+          }}
+          className="preview-return-pill"
+        >
+          <ArrowLeft size={13} />
+          Back to app preview
+        </button>
+      )}
     </div>
   );
 }

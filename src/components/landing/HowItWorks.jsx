@@ -1,48 +1,122 @@
 import { motion } from 'framer-motion';
+import { Upload, Sparkles, Compass } from 'lucide-react';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const steps = [
-  { num: '01', emoji: '📤', title: 'Upload', desc: 'Drop a .zip of any codebase — a class project, an open-source repo, or a tutorial you want to reverse-engineer.' },
-  { num: '02', emoji: '✨', title: 'AI Analyzes', desc: 'Claude reads the source code and extracts architectural concepts, design patterns, and module relationships.' },
-  { num: '03', emoji: '🧭', title: 'Explore', desc: 'Interactive architecture map. Click any node to see how it works, what patterns it uses, and how it connects to the rest of the system.' },
+  {
+    num: '01',
+    Icon: Upload,
+    title: 'Point us at the code',
+    desc: 'Paste a GitHub URL, drop a zip, or connect your GitHub for private repos. No CLI, no setup.',
+  },
+  {
+    num: '02',
+    Icon: Sparkles,
+    title: 'We map its architecture',
+    desc: 'Claude reads every file, identifies concepts, and traces dependencies in 1–3 minutes.',
+  },
+  {
+    num: '03',
+    Icon: Compass,
+    title: 'Explore and ask',
+    desc: 'Click through the map, take the guided tour, or ask questions. Export a summary when you\u2019re done.',
+  },
 ];
 
 export default function HowItWorks() {
   return (
-    <AnimatedSection id="lp-how" style={{ padding: '6rem 2rem', maxWidth: 1280, margin: '0 auto' }}>
-      <h2 style={{
-        fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
-        textAlign: 'center', marginBottom: '3.5rem', color: '#f8fafc',
-      }}>
-        From zip file to architecture diagram in 3 steps
+    <AnimatedSection
+      id="lp-how"
+      style={{ padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)', maxWidth: 1180, margin: '0 auto' }}
+    >
+      <h2
+        className="serif"
+        style={{
+          fontSize: 'clamp(1.75rem, 5vw, 2.5rem)',
+          fontWeight: 500,
+          textAlign: 'center',
+          marginBottom: 'clamp(2rem, 5vw, 3.5rem)',
+          color: 'var(--color-text-primary)',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        From repo URL to architecture map in three steps
       </h2>
+
       <motion.div
         className="lp-steps"
         variants={staggerContainer}
         initial="hidden"
         whileInView="show"
         viewport={{ once: true, margin: '-50px' }}
-        style={{ display: 'flex', gap: '2rem', maxWidth: 900, margin: '0 auto', position: 'relative' }}
+        style={{
+          display: 'flex',
+          gap: '1.25rem',
+          maxWidth: 980,
+          margin: '0 auto',
+          position: 'relative',
+        }}
       >
-        {steps.map((s, i) => (
-          <motion.div key={i} variants={fadeUp} style={{
-            flex: 1, background: 'rgba(20,20,24,.6)', borderRadius: 14,
-            padding: '2.5rem 2rem', border: '1px solid rgba(255,255,255,.06)',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(6,182,212,.1)', border: '2px solid #06b6d4', borderRadius: '50%',
-              fontWeight: 700, color: '#06b6d4', margin: '0 auto 1.5rem', fontSize: '1.1rem',
-              boxShadow: '0 0 15px rgba(6,182,212,0.2)',
-            }}>{s.num}</div>
-            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>{s.emoji}</div>
-            <h3 style={{ fontWeight: 600, marginBottom: '.75rem', fontSize: '1.1rem', color: '#f8fafc' }}>{s.title}</h3>
-            <p style={{ color: '#94a3b8', fontSize: '.9rem', lineHeight: 1.6 }}>{s.desc}</p>
+        {steps.map(({ num, Icon, title, desc }, i) => (
+          <motion.div
+            key={i}
+            variants={fadeUp}
+            style={{
+              flex: 1,
+              background: 'var(--color-bg-elevated)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'clamp(1.5rem, 4vw, 2.5rem) clamp(1.25rem, 3vw, 2rem)',
+              border: '1px solid var(--color-border-subtle)',
+              boxShadow: 'var(--shadow-sm)',
+              position: 'relative',
+            }}
+          >
+            <div
+              className="serif"
+              style={{
+                fontSize: 'clamp(2.5rem, 6vw, 3.5rem)',
+                fontStyle: 'italic',
+                color: 'var(--color-text-tertiary)',
+                lineHeight: 1,
+                marginBottom: '0.5rem',
+                letterSpacing: '-0.03em',
+              }}
+            >
+              {num}
+            </div>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-accent-soft)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '1rem',
+              }}
+            >
+              <Icon size={18} strokeWidth={1.5} color="var(--color-accent)" />
+            </div>
+            <h3
+              style={{
+                fontWeight: 600,
+                marginBottom: '.5rem',
+                fontSize: '1.05rem',
+                color: 'var(--color-text-primary)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {title}
+            </h3>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '.92rem', lineHeight: 1.6 }}>{desc}</p>
           </motion.div>
         ))}
       </motion.div>
-      <style>{`@media(max-width:900px){.lp-steps{flex-direction:column!important}}`}</style>
+
+      <style>{`
+        @media (max-width: 900px) { .lp-steps { flex-direction: column !important; } }
+      `}</style>
     </AnimatedSection>
   );
 }

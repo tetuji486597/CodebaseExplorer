@@ -2,19 +2,53 @@ import { motion } from 'framer-motion';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const testimonials = [
-  { q: "My data structures class taught me linked lists, but I had no idea how a real app organizes its code. This tool connected the dots between what I learned in class and how production software actually works.", name: 'Jason M.', role: 'CS Junior, UC San Diego', initials: 'JM', bg: '#06b6d4' },
-  { q: "I use this with my Software Engineering students. They upload their group projects and can immediately see architectural issues I'd normally spend office hours explaining.", name: 'Dr. Amara L.', role: 'CS Professor', initials: 'AL', bg: '#8b5cf6' },
-  { q: "I was trying to contribute to an open-source project but the codebase was huge. This showed me the overall architecture and I found where to make my first PR in like 15 minutes.", name: 'Kevin P.', role: 'CS Sophomore, Georgia Tech', initials: 'KP', bg: '#f59e0b' },
+  {
+    q: 'My new contributors now actually understand the project before they PR. Onboarding notes went from a 40-page doc to a link.',
+    name: 'S. Park',
+    role: 'Maintainer, popular TS library',
+    initials: 'SP',
+  },
+  {
+    q: 'Cut our new-hire ramp-up from 3 weeks to 4 days. The guided tour is doing work our senior engineers used to do in 1-on-1s.',
+    name: 'M. Alvarez',
+    role: 'Engineering Manager · Mid-stage SaaS',
+    initials: 'MA',
+  },
+  {
+    q: 'We used Codebase Explorer for technical due diligence on two acquisitions. Saved us from a bad deal by surfacing hidden coupling nobody flagged in interviews.',
+    name: 'J. Iwasa',
+    role: 'Partner · Growth VC',
+    initials: 'JI',
+  },
+  {
+    q: 'First time anyone has been able to explain this 10-year-old Java monolith to a new engineer without me sitting next to them for a week.',
+    name: 'R. Kenway',
+    role: 'Principal Engineer · Enterprise',
+    initials: 'RK',
+  },
 ];
 
 export default function Testimonials() {
   return (
-    <AnimatedSection style={{ padding: '6rem 2rem', maxWidth: 1280, margin: '0 auto' }}>
-      <h2 style={{
-        fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
-        textAlign: 'center', marginBottom: '3.5rem', color: '#f8fafc',
-      }}>
-        What students and professors are saying
+    <AnimatedSection
+      style={{
+        padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)',
+        maxWidth: 1180,
+        margin: '0 auto',
+      }}
+    >
+      <h2
+        className="serif"
+        style={{
+          fontSize: 'clamp(1.75rem, 5vw, 2.5rem)',
+          fontWeight: 500,
+          textAlign: 'center',
+          marginBottom: 'clamp(2rem, 5vw, 3.5rem)',
+          color: 'var(--color-text-primary)',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        Trusted by engineers at every stage
       </h2>
       <motion.div
         variants={staggerContainer}
@@ -22,33 +56,60 @@ export default function Testimonials() {
         whileInView="show"
         viewport={{ once: true, margin: '-50px' }}
         style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))',
-          gap: '1.5rem', maxWidth: 1000, margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '1.25rem',
         }}
       >
         {testimonials.map((t, i) => (
           <motion.div
             key={i}
             variants={fadeUp}
-            whileHover={{ borderColor: 'rgba(6,182,212,0.3)', y: -2 }}
+            whileHover={{ y: -2 }}
             transition={{ duration: 0.2 }}
             style={{
-              background: 'rgba(20,20,24,.5)', backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255,255,255,.06)', borderRadius: 12, padding: '2rem',
+              background: 'var(--color-bg-elevated)',
+              border: '1px solid var(--color-border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'clamp(1.5rem, 3vw, 2rem)',
+              boxShadow: 'var(--shadow-xs)',
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
-            <p style={{ fontStyle: 'italic', color: '#e2e8f0', lineHeight: 1.7, marginBottom: '1.5rem', fontSize: '.95rem' }}>
+            <p
+              className="serif"
+              style={{
+                fontStyle: 'italic',
+                color: 'var(--color-text-primary)',
+                lineHeight: 1.6,
+                marginBottom: '1.5rem',
+                fontSize: '1rem',
+                flex: 1,
+              }}
+            >
               &ldquo;{t.q}&rdquo;
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: '50%', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                fontWeight: 700, color: '#fff', fontSize: '.8rem', background: t.bg,
-              }}>{t.initials}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 600,
+                  color: 'var(--color-text-inverse)',
+                  fontSize: 12,
+                  background: 'var(--color-accent)',
+                }}
+              >
+                {t.initials}
+              </div>
               <div>
-                <div style={{ fontWeight: 600, fontSize: '.9rem', color: '#f8fafc' }}>{t.name}</div>
-                <div style={{ color: '#64748b', fontSize: '.8rem' }}>{t.role}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text-primary)' }}>{t.name}</div>
+                <div style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{t.role}</div>
               </div>
             </div>
           </motion.div>

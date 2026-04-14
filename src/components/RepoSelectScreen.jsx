@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
+import { usePostHog } from '@posthog/react';
 import useStore from '../store/useStore';
 import { API_BASE } from '../lib/api';
+import { fetchAndLoadProject } from '../lib/loadProject';
+import BackBar from './BackBar';
 
 const LANGUAGE_COLORS = {
   JavaScript: '#f1e05a', TypeScript: '#3178c6', Python: '#3572A5',
@@ -12,8 +15,9 @@ const LANGUAGE_COLORS = {
 };
 
 export default function RepoSelectScreen() {
-  const { setProjectId, setProcessingStatus, setPipelineStatus, setPipelineProgress, loadData, session, signOut, user } = useStore();
+  const { setProjectId, setProcessingStatus, setPipelineStatus, setPipelineProgress, session, signOut, user } = useStore();
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -77,6 +81,7 @@ export default function RepoSelectScreen() {
     }
 
     setAnalyzing(repo.full_name);
+    posthog.capture('repo_uploaded', { source: 'repo_select' });
     navigate('/processing', { replace: true });
     setProcessingStatus('Downloading repository from GitHub...');
 
@@ -134,72 +139,17 @@ export default function RepoSelectScreen() {
   };
 
   const checkAndLoadProject = async (projectId) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
-      const data = await res.json();
-      if (data.concepts && data.concepts.length > 0) {
-        transformAndLoad(data);
-      }
-    } catch {}
+    const result = await fetchAndLoadProject(projectId);
+    if (result) navigate('/overview', { replace: true });
   };
 
   const loadProjectData = async (projectId) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
-      const data = await res.json();
-      transformAndLoad(data);
-    } catch (err) {
-      console.error('Failed to load project data:', err);
+    const result = await fetchAndLoadProject(projectId);
+    if (result) {
+      navigate('/overview', { replace: true });
+    } else {
+      console.error('Failed to load project data');
     }
-  };
-
-  const transformAndLoad = (data) => {
-    const concepts = (data.concepts || []).map(c => ({
-      id: c.concept_key,
-      name: c.name,
-      emoji: c.emoji,
-      color: c.color,
-      description: c.explanation,
-      metaphor: c.metaphor,
-      one_liner: c.one_liner,
-      deep_explanation: c.deep_explanation,
-      beginner_explanation: c.beginner_explanation,
-      intermediate_explanation: c.intermediate_explanation,
-      advanced_explanation: c.advanced_explanation,
-      importance: c.importance,
-      fileIds: (data.files || []).filter(f => f.concept_id === c.concept_key).map(f => f.path),
-    }));
-
-    const files = (data.files || []).map(f => ({
-      id: f.path,
-      name: f.name,
-      conceptId: f.concept_id,
-      description: f.analysis?.purpose || '',
-      exports: (f.analysis?.key_exports || []).map(e => ({
-        name: e.name,
-        whatItDoes: e.what_it_does || '',
-      })),
-      codeSnippet: '',
-      role: f.role,
-    }));
-
-    const conceptEdges = (data.edges || []).map(e => ({
-      source: e.source_concept_key,
-      target: e.target_concept_key,
-      label: e.relationship,
-      strength: e.strength,
-      explanation: e.explanation,
-    }));
-
-    if (data.insights) {
-      useStore.getState().setInsights(data.insights);
-    }
-    if (data.userState) {
-      useStore.getState().setUserState(data.userState);
-    }
-
-    loadData({ concepts, files, conceptEdges, fileImports: [] });
-    navigate('/explorer', { replace: true });
   };
 
   const filtered = repos.filter(r =>
@@ -211,33 +161,16 @@ export default function RepoSelectScreen() {
   const displayName = user?.user_metadata?.user_name || user?.email || 'User';
 
   return (
-    <div className="w-full h-full flex flex-col relative overflow-hidden" style={{ background: '#0F0F0E' }}>
-      {/* Header */}
-      <div style={{
-        padding: '1.5rem 2rem', borderBottom: '1px solid #222',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {avatarUrl && (
-            <img src={avatarUrl} alt="" style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #333' }} />
-          )}
-          <div>
-            <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '1.1rem' }}>Choose a repository</div>
-            <div style={{ color: '#666', fontSize: '.85rem' }}>Signed in as {displayName}</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '.75rem' }}>
-          <button onClick={() => navigate('/upload')} style={{
-            background: 'rgba(255,255,255,.05)', color: '#94a3b8',
-            border: '1px solid #333', padding: '.5rem 1rem',
-            borderRadius: 6, fontSize: '.85rem', cursor: 'pointer',
-          }}>Upload zip instead</button>
-          <button onClick={() => { signOut(); navigate('/'); }} style={{
-            background: 'none', color: '#94a3b8', border: '1px solid #333',
-            padding: '.5rem 1rem', borderRadius: 6, fontSize: '.85rem', cursor: 'pointer',
-          }}>Sign out</button>
-        </div>
-      </div>
+    <div className="w-full h-full flex flex-col relative overflow-hidden" style={{ background: 'var(--color-bg-base)' }}>
+      <BackBar to="/upload" label="Choose a repository">
+        <button onClick={() => { signOut(); navigate('/'); }} style={{
+          background: 'none', color: 'var(--color-text-secondary)',
+          border: '1px solid var(--color-border-subtle)',
+          padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+          fontSize: 12, cursor: 'pointer',
+          transition: `all var(--duration-base) var(--ease-out)`,
+        }}>Sign out</button>
+      </BackBar>
 
       {/* Search */}
       <div style={{ padding: '1rem 2rem 0' }}>
@@ -249,7 +182,7 @@ export default function RepoSelectScreen() {
           style={{
             width: '100%', maxWidth: 500, padding: '.65rem 1rem',
             background: '#1a1a18', border: '1px solid #333', borderRadius: 8,
-            color: '#e2e8f0', fontSize: '.9rem', outline: 'none',
+            color: 'var(--color-text-primary)', fontSize: '.9rem', outline: 'none',
           }}
           onFocus={e => e.target.style.borderColor = '#06b6d4'}
           onBlur={e => e.target.style.borderColor = '#333'}
@@ -293,7 +226,7 @@ export default function RepoSelectScreen() {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.25rem' }}>
-                    <span style={{ color: '#e2e8f0', fontWeight: 500, fontSize: '.95rem' }}>
+                    <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, fontSize: '.95rem' }}>
                       {repo.full_name}
                     </span>
                     {repo.private && (
@@ -343,7 +276,7 @@ export default function RepoSelectScreen() {
             {hasMore && !search && (
               <button onClick={loadMore} style={{
                 padding: '.75rem', background: 'none', border: '1px solid #333',
-                borderRadius: 8, color: '#94a3b8', cursor: 'pointer', fontSize: '.85rem',
+                borderRadius: 8, color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '.85rem',
                 marginTop: '.5rem',
               }}>Load more repositories</button>
             )}

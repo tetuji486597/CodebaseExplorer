@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import useStore from '../store/useStore';
-import { Send, ChevronDown, MessageSquare } from 'lucide-react';
+import { Send, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import { API_BASE } from '../lib/api';
 
 export default function ChatBar() {
@@ -8,10 +8,13 @@ export default function ChatBar() {
   const [expanded, setExpanded] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const messagesEndRef = useRef(null);
-  const {
-    chatMessages, chatLoading, addChatMessage, setChatLoading,
-    concepts, projectId, selectedNode, showInspector,
-  } = useStore();
+  const chatMessages = useStore(s => s.chatMessages);
+  const chatLoading = useStore(s => s.chatLoading);
+  const addChatMessage = useStore(s => s.addChatMessage);
+  const setChatLoading = useStore(s => s.setChatLoading);
+  const concepts = useStore(s => s.concepts);
+  const projectId = useStore(s => s.projectId);
+  const selectedNode = useStore(s => s.selectedNode);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -33,11 +36,7 @@ export default function ChatBar() {
         const response = await fetch(`${API_BASE}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userMsg,
-            projectId,
-            selectedNode,
-          }),
+          body: JSON.stringify({ message: userMsg, projectId, selectedNode }),
         });
 
         const reader = response.body.getReader();
@@ -78,9 +77,7 @@ export default function ChatBar() {
           }
         }
 
-        if (accumulated) {
-          addChatMessage({ role: 'assistant', content: accumulated });
-        }
+        if (accumulated) addChatMessage({ role: 'assistant', content: accumulated });
         setStreamingText('');
         setChatLoading(false);
       } catch (err) {
@@ -90,13 +87,9 @@ export default function ChatBar() {
       }
     } else {
       setTimeout(() => {
-        const responses = [
-          `This codebase is organized around ${concepts.length} main concepts: ${concepts.slice(0, 4).map(c => c.name).join(', ')}. Each concept groups related files together.`,
-          `Think of this app like a restaurant. Each concept is a different area \u2014 the kitchen, the dining room, the front desk \u2014 all working together.`,
-        ];
         addChatMessage({
           role: 'assistant',
-          content: responses[Math.floor(Math.random() * responses.length)],
+          content: `This codebase is organized around ${concepts.length} main concepts: ${concepts.slice(0, 4).map(c => c.name).join(', ')}.`,
         });
         setChatLoading(false);
       }, 800);
@@ -119,8 +112,19 @@ export default function ChatBar() {
               useStore.getState().setSelectedNode({ type: 'concept', id: key });
               useStore.getState().setShowInspector(true);
             }}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-medium"
-            style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '1px 8px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+              fontWeight: 500,
+              background: 'var(--color-accent-soft)',
+              color: 'var(--color-accent-active)',
+              border: '1px solid var(--color-border-strong)',
+              cursor: 'pointer',
+            }}
           >
             {concept?.name || key}
           </button>
@@ -136,8 +140,18 @@ export default function ChatBar() {
               useStore.getState().setSelectedNode({ type: 'file', id: path });
               useStore.getState().setShowInspector(true);
             }}
-            className="inline mono text-xs px-1.5 py-0.5 rounded-md font-medium"
-            style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd' }}
+            className="mono"
+            style={{
+              display: 'inline-flex',
+              fontSize: 12,
+              padding: '1px 8px',
+              borderRadius: 'var(--radius-sm)',
+              fontWeight: 500,
+              background: 'var(--color-bg-sunken)',
+              color: 'var(--color-text-secondary)',
+              border: '1px solid var(--color-border-subtle)',
+              cursor: 'pointer',
+            }}
           >
             {path.split('/').pop()}
           </button>
@@ -149,50 +163,73 @@ export default function ChatBar() {
   };
 
   return (
-    <div
-      className="absolute bottom-0 left-0 z-20"
-      style={{ right: showInspector ? 'min(400px, 92vw)' : 0 }}
-    >
+    <div className="eg-chat">
       {/* Messages area (expandable) */}
       {expanded && (chatMessages.length > 0 || streamingText) && (
         <div
-          className="mx-4 mb-1 rounded-t-xl overflow-hidden"
           style={{
-            background: '#14142b',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderBottom: 'none',
-            maxHeight: '40vh',
-            boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+            maxHeight: 'min(40dvh, 420px)',
+            display: 'flex',
+            flexDirection: 'column',
+            borderBottom: '1px solid var(--color-border-subtle)',
           }}
         >
           <div
-            className="flex items-center justify-between px-4 py-2.5"
-            style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px clamp(0.75rem, 3vw, 1rem)',
+              borderBottom: '1px solid var(--color-border-subtle)',
+              flexShrink: 0,
+            }}
           >
-            <div className="flex items-center gap-2">
-              <MessageSquare size={12} style={{ color: '#64748b' }} />
-              <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>Chat</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MessageSquare size={12} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)' }} />
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)' }}>Chat</span>
             </div>
             <button
               onClick={() => setExpanded(false)}
-              className="flex items-center gap-1 text-xs font-medium transition-colors duration-200"
-              style={{ color: '#64748b' }}
-              onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-              onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                fontWeight: 500,
+                color: 'var(--color-text-tertiary)',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
-              <ChevronDown size={12} />
+              <ChevronDown size={12} strokeWidth={1.75} />
               Collapse
             </button>
           </div>
-          <div className="overflow-auto p-4 space-y-3" style={{ maxHeight: '35vh' }}>
+          <div
+            style={{
+              overflowY: 'auto',
+              padding: 'clamp(0.75rem, 3vw, 1rem)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
             {chatMessages.map((msg, i) => (
               <div
                 key={i}
-                className={`text-sm p-3 rounded-xl leading-relaxed ${msg.role === 'user' ? 'ml-12' : 'mr-4'}`}
                 style={{
-                  background: msg.role === 'user' ? 'rgba(99, 102, 241, 0.1)' : '#1e1e3a',
-                  color: msg.role === 'user' ? '#a5b4fc' : '#cbd5e1',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  padding: 12,
+                  borderRadius: 'var(--radius-md)',
+                  marginLeft: msg.role === 'user' ? 48 : 0,
+                  marginRight: msg.role === 'user' ? 0 : 16,
+                  background: msg.role === 'user' ? 'var(--color-accent-soft)' : 'var(--color-bg-elevated)',
+                  color: msg.role === 'user' ? 'var(--color-accent-active)' : 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border-subtle)',
                 }}
               >
                 {msg.role === 'assistant' ? renderMessage(msg.content) : msg.content}
@@ -200,18 +237,26 @@ export default function ChatBar() {
             ))}
             {streamingText && (
               <div
-                className="text-sm p-3 rounded-xl leading-relaxed mr-4"
-                style={{ background: '#1e1e3a', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.06)' }}
+                style={{
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  padding: 12,
+                  borderRadius: 'var(--radius-md)',
+                  marginRight: 16,
+                  background: 'var(--color-bg-elevated)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border-subtle)',
+                }}
               >
                 {renderMessage(streamingText)}
-                <span className="inline-block w-1.5 h-3 ml-0.5 rounded-sm" style={{ background: '#6366f1', animation: 'processing-dot 1s infinite' }} />
+                <span style={{ display: 'inline-block', width: 6, height: 12, marginLeft: 2, borderRadius: 2, background: 'var(--color-accent)', animation: 'processing-dot 1s infinite' }} />
               </div>
             )}
             {chatLoading && !streamingText && (
-              <div className="flex gap-1.5 p-3">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#6366f1', animation: 'processing-dot 1.4s infinite 0s' }} />
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#6366f1', animation: 'processing-dot 1.4s infinite 0.2s' }} />
-                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#6366f1', animation: 'processing-dot 1.4s infinite 0.4s' }} />
+              <div style={{ display: 'flex', gap: 6, padding: 12 }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', animation: 'processing-dot 1.4s infinite' }} />
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', animation: 'processing-dot 1.4s infinite 0.2s' }} />
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-accent)', animation: 'processing-dot 1.4s infinite 0.4s' }} />
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -219,44 +264,91 @@ export default function ChatBar() {
         </div>
       )}
 
+      {/* Collapsed expand indicator */}
+      {!expanded && chatMessages.length > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            width: '100%',
+            padding: '8px 16px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--color-text-tertiary)',
+            transition: 'color 150ms ease-out',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
+        >
+          <ChevronUp size={12} strokeWidth={1.75} />
+          {chatMessages.length} {chatMessages.length === 1 ? 'message' : 'messages'}
+        </button>
+      )}
+
       {/* Input bar */}
-      <div className="p-4">
-        <form onSubmit={handleSubmit}>
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200"
+      <form onSubmit={handleSubmit} style={{ padding: 'clamp(0.75rem, 2.5vw, 1rem)' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-elevated)',
+            border: '1px solid var(--color-border-visible)',
+            boxShadow: 'var(--shadow-xs)',
+            transition: `all var(--duration-base) var(--ease-out)`,
+            minHeight: 44,
+          }}
+          onClick={() => chatMessages.length > 0 && setExpanded(true)}
+        >
+          <MessageSquare size={14} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+          <input
+            type="text"
+            data-test="chat-input"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Ask about this code"
             style={{
-              background: '#14142b',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+              flex: 1,
+              background: 'transparent',
+              fontSize: 13,
+              outline: 'none',
+              border: 'none',
+              color: 'var(--color-text-primary)',
             }}
-            onClick={() => chatMessages.length > 0 && setExpanded(true)}
-          >
-            <MessageSquare size={14} style={{ color: '#475569', flexShrink: 0 }} />
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Ask anything about this codebase..."
-              className="flex-1 bg-transparent text-sm outline-none placeholder-slate-600"
-              style={{ color: '#e2e8f0', fontFamily: "'JetBrains Mono', monospace" }}
-            />
-            {input.trim() && (
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-95"
-                style={{
-                  background: 'rgba(99, 102, 241, 0.2)',
-                  color: '#a5b4fc',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                }}
-              >
-                <Send size={12} />
-                Send
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
+          />
+          {input.trim() && (
+            <button
+              type="submit"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 12,
+                fontWeight: 600,
+                background: 'var(--color-accent)',
+                color: 'var(--color-text-inverse)',
+                border: '1px solid var(--color-accent)',
+                cursor: 'pointer',
+                transition: `all var(--duration-base) var(--ease-out)`,
+              }}
+            >
+              <Send size={12} strokeWidth={1.75} />
+              Send
+            </button>
+          )}
+        </div>
+      </form>
     </div>
   );
 }

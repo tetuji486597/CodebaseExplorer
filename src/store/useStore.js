@@ -28,6 +28,10 @@ const useStore = create((set, get) => ({
   setConceptEdges: (conceptEdges) => set({ conceptEdges }),
   setFileImports: (fileImports) => set({ fileImports }),
 
+  // Project metadata (name, summary, framework, language, file_count)
+  projectMeta: null,
+  setProjectMeta: (meta) => set({ projectMeta: meta }),
+
   // Load all data at once
   loadData: ({ concepts, files, conceptEdges, fileImports }) => set({
     concepts,
@@ -73,9 +77,34 @@ const useStore = create((set, get) => ({
   // Upload feature flag
   uploadEnabled: true,
 
-  // Dark mode (default true)
-  darkMode: true,
-  toggleDarkMode: () => set(state => ({ darkMode: !state.darkMode })),
+  // Dark mode (default false — warm light theme)
+  darkMode: (() => {
+    if (typeof window === 'undefined') return false;
+    const saved = window.localStorage?.getItem('cbe_theme');
+    if (saved === 'dark') return true;
+    if (saved === 'light') return false;
+    return false;
+  })(),
+  toggleDarkMode: () => set(state => {
+    const next = !state.darkMode;
+    try { window.localStorage?.setItem('cbe_theme', next ? 'dark' : 'light'); } catch {}
+    return { darkMode: next };
+  }),
+
+  // Persona (pivot 1: 'oss' | 'onboarding' | 'dd_legacy' | null)
+  persona: (() => {
+    if (typeof window === 'undefined') return null;
+    try { return window.localStorage?.getItem('cbe_persona') || null; } catch { return null; }
+  })(),
+  setPersona: (persona) => {
+    try { window.localStorage?.setItem('cbe_persona', persona || ''); } catch {}
+    set({ persona });
+  },
+
+  // Shared depth level across Inspector + GuidedOverlay
+  // ('beginner' | 'intermediate' | 'advanced')
+  activeDepthLevel: 'beginner',
+  setActiveDepthLevel: (level) => set({ activeDepthLevel: level }),
 
   // Graph layout positions (managed by d3-force, stored here for persistence)
   nodePositions: {},
@@ -155,9 +184,29 @@ const useStore = create((set, get) => ({
     set({
       guidedMode: true,
       selectedNode: { type: 'concept', id: explorationPath[guidedPosition] },
-      showInspector: false,
+      showInspector: true,
     });
   },
+
+  // Quiz state
+  quizGateActive: false,
+  quizGateQuestions: [],
+  quizGateType: null,
+  quizCurrentIndex: 0,
+  quizAnswers: [],
+  quizLoading: false,
+  quizStats: {},
+  setQuizGateActive: (active) => set({ quizGateActive: active }),
+  setQuizGateQuestions: (questions) => set({ quizGateQuestions: questions }),
+  setQuizGateType: (type) => set({ quizGateType: type }),
+  setQuizCurrentIndex: (index) => set({ quizCurrentIndex: index }),
+  addQuizAnswer: (answer) => set(state => ({ quizAnswers: [...state.quizAnswers, answer] })),
+  resetQuizGate: () => set({
+    quizGateActive: false, quizGateQuestions: [], quizGateType: null,
+    quizCurrentIndex: 0, quizAnswers: [],
+  }),
+  setQuizLoading: (loading) => set({ quizLoading: loading }),
+  setQuizStats: (stats) => set({ quizStats: stats }),
 
   // Insights
   insights: [],
@@ -170,6 +219,34 @@ const useStore = create((set, get) => ({
   // Curated codebase tracking
   curatedCodebaseId: null,
   setCuratedCodebaseId: (id) => set({ curatedCodebaseId: id }),
+
+  // App-first preview state
+  appPreviewData: null,
+  setAppPreviewData: (data) => set({ appPreviewData: data }),
+  previewBridgeFrom: null, // { conceptKey, narrationTitle, previewId }
+  setPreviewBridgeFrom: (ctx) => set({ previewBridgeFrom: ctx }),
+  clearPreviewBridge: () => set({ previewBridgeFrom: null }),
+
+  // Reset all project-related state for clean project switching
+  resetProject: () => set({
+    concepts: [], files: [], conceptEdges: [], fileImports: [],
+    projectMeta: null, projectId: null,
+    pipelineStatus: null, pipelineProgress: null,
+    selectedNode: null, showInspector: false,
+    chatMessages: [], chatLoading: false,
+    guidedMode: false, guidedPosition: 0, explorationPath: [],
+    exploredConcepts: new Set(),
+    explorationProgress: 0, userState: null,
+    insightCard: null, pulsingNodeId: null, connectionHighlight: null,
+    suggestionBanner: null, insights: [],
+    quizGateActive: false, quizGateQuestions: [], quizGateType: null,
+    quizCurrentIndex: 0, quizAnswers: [], quizStats: {},
+    curatedCodebaseId: null, appPreviewData: null,
+    previewBridgeFrom: null,
+    showCodePanel: false, codePanelFileId: null,
+    showOnboarding: true, onboardingStep: 0,
+    toast: null,
+  }),
 
   // Helpers
   getConceptById: (id) => get().concepts.find(c => c.id === id),

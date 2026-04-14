@@ -1,13 +1,17 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import useStore from '../store/useStore';
 import useUserState from '../hooks/useUserState';
+import useQuizGate from '../hooks/useQuizGate';
 import { API_BASE } from '../lib/api';
 import { CONCEPT_COLORS } from '../data/sampleData';
+import { graphViewport } from '../lib/graphViewport';
 import {
-  X, ChevronRight, FileCode2, ArrowRight, ArrowLeft,
-  Copy, Check, Key, Home, Image, User, Bell, FolderOpen, Search, Database, Mail, Box,
+  X, ChevronLeft, ChevronRight, FileCode2, ArrowRight, ArrowLeft,
+  Copy, Key, Home, Image, User, Bell, FolderOpen, Search, Database, Mail, Box,
+  Eye, Compass,
 } from 'lucide-react';
 import KeywordHighlighter from './KeywordHighlighter';
+import BridgeBanner from './BridgeBanner';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const LEVEL_LABELS = { beginner: 'Conceptual', intermediate: 'Applied', advanced: 'Under the Hood' };
@@ -18,27 +22,51 @@ const CONCEPT_ICON_MAP = {
   notifications: Bell, media: FolderOpen, search: Search,
   database: Database, email: Mail,
 };
+function getConceptIcon(id) { return CONCEPT_ICON_MAP[id] || Box; }
 
-function getConceptIcon(id) {
-  return CONCEPT_ICON_MAP[id] || Box;
-}
+// Popover dimensions — fixed so layout math is predictable
+const POPOVER_W = 360;
+const POPOVER_MAX_H = 520;
+const POPOVER_GAP = 20; // distance from node edge
+const EDGE_PAD = 16;    // viewport padding
 
+/**
+ * ConceptPopover — a floating anchored detail card for the selected concept/file.
+ * Reads the selected node's live screen position from graphViewport and updates
+ * its own position on every animation frame so it tracks pan/zoom smoothly.
+ * Flips left/right and clamps to viewport. Draws an SVG connector to the node.
+ */
 export default function InspectorPanel() {
   const {
     selectedNode, showInspector, setShowInspector, clearSelection,
     concepts, files, conceptEdges, projectId,
-    openCodePanel, addChatMessage, setChatLoading, showToast,
+    openCodePanel, showToast,
+    activeDepthLevel, setActiveDepthLevel,
+    guidedMode, guidedPosition, explorationPath, exploredConcepts,
+    advanceGuided, retreatGuided, exitGuidedMode,
+    setSelectedNode,
+    quizGateActive,
   } = useStore();
 
-  const { estimateLevel, fireEngagement } = useUserState();
+  const { fireEngagement } = useUserState();
+  const { checkForQuizGate } = useQuizGate();
 
   const [explanation, setExplanation] = useState(null);
   const [streamingExplanation, setStreamingExplanation] = useState('');
   const [loadingExplanation, setLoadingExplanation] = useState(false);
-  const [levelOverride, setLevelOverride] = useState(null);
   const [deepExpanded, setDeepExpanded] = useState(false);
   const [expandedEdge, setExpandedEdge] = useState(null);
-  const [descExpanded, setDescExpanded] = useState(false);
+
+  // Position & side ('left' or 'right' of the node)
+  const [anchor, setAnchor] = useState({ x: 0, y: 0, side: 'right', visible: false, nodeX: 0, nodeY: 0 });
+  const cardRef = useRef(null);
+  const rafRef = useRef(null);
+
+  // Drag state — refs to avoid re-render storms during pointer move
+  const [isDragged, setIsDragged] = useState(false);
+  const isDraggedRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
 
   const node = useMemo(() => {
     if (!selectedNode) return null;
@@ -64,14 +92,43 @@ export default function InspectorPanel() {
     return conceptEdges.filter(e => e.source === concept.id || e.target === concept.id);
   }, [concept, selectedNode, conceptEdges]);
 
-  const currentLevel = useMemo(() => {
-    if (!selectedNode || selectedNode.type !== 'concept') return 'beginner';
-    const est = estimateLevel(selectedNode.id);
-    return est === 'unseen' || est === 'glanced' ? 'beginner' : est;
-  }, [selectedNode, estimateLevel]);
+  const activeLevel = activeDepthLevel || 'beginner';
 
-  const activeLevel = levelOverride || currentLevel;
+  // Guided-tour state relative to the current selection
+  const currentTourKey = explorationPath[guidedPosition];
+  const isOnTourPath = guidedMode && selectedNode?.type === 'concept' && selectedNode.id === currentTourKey;
+  const isOffTourPath = guidedMode && selectedNode?.type === 'concept' && !isOnTourPath;
+  const isFirstStep = guidedPosition === 0;
+  const isLastStep = guidedPosition === explorationPath.length - 1;
 
+  const handleNext = useCallback(async () => {
+    if (isLastStep) {
+      exitGuidedMode();
+      return;
+    }
+    const nextPos = guidedPosition + 1;
+    const gateShown = await checkForQuizGate(nextPos);
+    if (gateShown) return;
+    advanceGuided();
+  }, [isLastStep, guidedPosition, advanceGuided, exitGuidedMode, checkForQuizGate]);
+
+  const handleBack = useCallback(() => {
+    if (isFirstStep) return;
+    retreatGuided();
+  }, [isFirstStep, retreatGuided]);
+
+  const handleJumpTo = useCallback((index) => {
+    if (index === guidedPosition) return;
+    useStore.getState().setGuidedPosition(index);
+    useStore.getState().setSelectedNode({ type: 'concept', id: explorationPath[index] });
+  }, [guidedPosition, explorationPath]);
+
+  const handleReturnToTour = useCallback(() => {
+    if (!currentTourKey) return;
+    setSelectedNode({ type: 'concept', id: currentTourKey });
+  }, [currentTourKey, setSelectedNode]);
+
+  // Fetch or read explanation text for the active depth level
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'concept') {
       setExplanation(null);
@@ -115,9 +172,9 @@ export default function InspectorPanel() {
             for (const line of lines) {
               if (line.startsWith('data: ')) {
                 try {
-                  const data = JSON.parse(line.slice(6));
-                  if (data.text) { accumulated += data.text; setStreamingExplanation(accumulated); }
-                  if (data.done) { setExplanation(accumulated); setStreamingExplanation(''); }
+                  const d = JSON.parse(line.slice(6));
+                  if (d.text) { accumulated += d.text; setStreamingExplanation(accumulated); }
+                  if (d.done) { setExplanation(accumulated); setStreamingExplanation(''); }
                 } catch {}
               }
             }
@@ -129,16 +186,72 @@ export default function InspectorPanel() {
     fetchExplanation();
   }, [selectedNode, projectId, activeLevel, node]);
 
+  // Reset transient UI state when selection changes
   useEffect(() => {
-    setLevelOverride(null);
     setDeepExpanded(false);
     setExpandedEdge(null);
-    setDescExpanded(false);
+    setIsDragged(false);
+    isDraggedRef.current = false;
   }, [selectedNode]);
+
+  // Position tracking loop: read graphViewport.getScreenPos on every frame
+  // and compute smart anchor position that flips and clamps to viewport.
+  useLayoutEffect(() => {
+    if (!showInspector || !selectedNode) {
+      setAnchor(a => ({ ...a, visible: false }));
+      return;
+    }
+
+    const update = () => {
+      const pos = graphViewport.getScreenPos(selectedNode.id);
+      if (!pos) {
+        rafRef.current = requestAnimationFrame(update);
+        return;
+      }
+
+      const cardH = cardRef.current?.offsetHeight || POPOVER_MAX_H;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      // Prefer right side
+      let side = 'right';
+      let x = pos.x + pos.radius + POPOVER_GAP;
+      if (x + POPOVER_W + EDGE_PAD > vw) {
+        // Flip to left
+        side = 'left';
+        x = pos.x - pos.radius - POPOVER_GAP - POPOVER_W;
+      }
+
+      // Center vertically on node, clamp to viewport
+      let y = pos.y - cardH / 2;
+      if (y < EDGE_PAD + 56) y = EDGE_PAD + 56; // account for top bar
+      if (y + cardH + EDGE_PAD > vh) y = vh - cardH - EDGE_PAD;
+
+      // When the user has dragged the popover, skip auto-positioning
+      if (!isDraggedRef.current) {
+        setAnchor({
+          x: Math.round(x),
+          y: Math.round(y),
+          side,
+          visible: true,
+          nodeX: Math.round(pos.x),
+          nodeY: Math.round(pos.y),
+          nodeRadius: Math.round(pos.radius),
+        });
+      }
+
+      rafRef.current = requestAnimationFrame(update);
+    };
+
+    rafRef.current = requestAnimationFrame(update);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [selectedNode, showInspector]);
 
   const handleCopyPrompt = useCallback(() => {
     const name = node?.name || node?.id || 'this concept';
-    const prompt = `Explain the [${name}] concept in this codebase \u2014 what does it do, what files are involved, and how does it connect to other parts of the system?`;
+    const prompt = `Explain the [${name}] concept in this codebase — what does it do, what files are involved, and how does it connect to other parts of the system?`;
     navigator.clipboard.writeText(prompt).then(() => {
       showToast('Copied prompt to clipboard');
     }).catch(() => {
@@ -146,426 +259,708 @@ export default function InspectorPanel() {
     });
   }, [node, showToast]);
 
-  if (!showInspector || !node) return null;
+  const handleDragStart = useCallback((e) => {
+    // Only drag from primary button
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const card = cardRef.current;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    dragOffsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    draggingRef.current = true;
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
 
-  const close = () => { setShowInspector(false); clearSelection(); };
+    const onMove = (ev) => {
+      if (!draggingRef.current || !cardRef.current) return;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let nx = ev.clientX - dragOffsetRef.current.x;
+      let ny = ev.clientY - dragOffsetRef.current.y;
+      // Clamp to viewport
+      nx = Math.max(0, Math.min(nx, vw - POPOVER_W));
+      ny = Math.max(0, Math.min(ny, vh - 60));
+      cardRef.current.style.left = nx + 'px';
+      cardRef.current.style.top = ny + 'px';
+      if (!isDraggedRef.current) {
+        isDraggedRef.current = true;
+        setIsDragged(true);
+      }
+    };
+
+    const onUp = () => {
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+
+  if (!showInspector || !node || quizGateActive) return null;
+
+  const close = () => {
+    setShowInspector(false);
+    clearSelection();
+    // If in guided mode, exit so the "Resume tour" button appears in the TopBar
+    if (guidedMode) exitGuidedMode();
+  };
 
   const displayDescription = explanation || streamingExplanation || node.description || node.explanation || '';
-  // Summary: first 1-2 sentences
-  const sentences = displayDescription.split(/(?<=[.!?])\s+/);
-  const summary = sentences.slice(0, 2).join(' ');
-  const hasMore = sentences.length > 2;
 
   const ConceptIcon = selectedNode.type === 'concept' ? getConceptIcon(node.id) : FileCode2;
 
+  // Connector line: from node edge on the chosen side to the card's near edge
+  const connectorStart = {
+    x: anchor.side === 'right' ? anchor.nodeX + anchor.nodeRadius : anchor.nodeX - anchor.nodeRadius,
+    y: anchor.nodeY,
+  };
+  const connectorEnd = {
+    x: anchor.side === 'right' ? anchor.x : anchor.x + POPOVER_W,
+    y: anchor.nodeY, // stay horizontal so it reads as anchored to the node
+  };
+
   return (
-    <div
-      className="absolute top-0 right-0 h-full z-30 overflow-y-auto"
-      style={{
-        width: 'min(400px, 92vw)',
-        minWidth: '380px',
-        background: '#14142b',
-        borderLeft: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '-4px 0 24px rgba(0,0,0,0.5)',
-        animation: 'slide-in-right 0.3s ease-out',
-      }}
-    >
-      {/* Header */}
-      <div
-        className="sticky top-0 z-10 flex items-center justify-between px-6 py-4"
-        style={{
-          background: 'rgba(20, 20, 43, 0.95)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{
-              background: colors.fill,
-              border: `1.5px solid ${colors.accent || colors.stroke}40`,
-            }}
-          >
-            <ConceptIcon size={18} style={{ color: colors.accent || colors.stroke }} />
-          </div>
-          <div>
-            <div className="font-medium text-sm" style={{ color: '#e2e8f0' }}>{node.name}</div>
-            {selectedNode.type === 'concept' && node.importance && (
-              <div
-                className="text-[10px] uppercase tracking-wider font-medium mt-0.5"
-                style={{
-                  color: node.importance === 'critical' ? '#ef4444' :
-                         node.importance === 'important' ? '#f59e0b' : '#64748b',
-                }}
-              >
-                {node.importance}
-              </div>
-            )}
-            {selectedNode.type === 'file' && concept && (
-              <div className="flex items-center gap-1.5 text-[10px] mt-0.5" style={{ color: colors.text }}>
-                {(() => { const CI = getConceptIcon(concept.id); return <CI size={10} />; })()}
-                {concept.name}
-              </div>
-            )}
-          </div>
-        </div>
-        <button
-          onClick={close}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200"
-          style={{ color: '#64748b', background: 'rgba(255,255,255,0.04)' }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#94a3b8'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#64748b'; }}
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      <div className="px-6 py-5 space-y-5">
-
-        {/* Metaphor callout */}
-        {selectedNode.type === 'concept' && node.metaphor && (
-          <div
-            className="flex gap-3 items-start rounded-xl p-4"
-            style={{
-              background: `${colors.fill}80`,
-              border: `1px solid ${(colors.accent || colors.stroke)}15`,
-            }}
-          >
-            <span className="text-base mt-0.5 shrink-0" style={{ color: colors.accent || colors.stroke, opacity: 0.5 }}>{'\u201C'}</span>
-            <p className="text-xs leading-relaxed italic" style={{ color: colors.text, opacity: 0.85 }}>
-              <KeywordHighlighter text={node.metaphor} accentColor={colors.accent || colors.stroke} />
-            </p>
-          </div>
-        )}
-
-        {/* Explanation card */}
-        <div
-          className="rounded-xl p-4"
+    <>
+      {/* SVG connector — rendered above the graph, below the card (hidden when dragged) */}
+      {anchor.visible && !isDragged && (
+        <svg
           style={{
-            background: '#1e1e3a',
-            border: '1px solid rgba(255,255,255,0.06)',
+            position: 'fixed',
+            inset: 0,
+            width: '100vw',
+            height: '100vh',
+            pointerEvents: 'none',
+            zIndex: 49,
           }}
         >
-          {/* Depth selector - segmented control */}
-          {selectedNode.type === 'concept' && (
-            <div className="flex items-center gap-2 mb-4 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <span className="text-[10px] uppercase tracking-wider font-medium mr-1" style={{ color: '#64748b' }}>Depth</span>
-              <div
-                className="flex rounded-lg relative overflow-hidden"
-                style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  padding: '2px',
-                }}
-              >
-                {/* Sliding indicator */}
-                <div
-                  className="absolute top-[2px] rounded-md transition-all duration-200 ease-out"
-                  style={{
-                    width: `calc(${100 / LEVELS.length}% - 2px)`,
-                    height: 'calc(100% - 4px)',
-                    left: `calc(${LEVELS.indexOf(activeLevel) * (100 / LEVELS.length)}% + 1px)`,
-                    background: `${colors.accent || colors.stroke}20`,
-                    border: `1px solid ${colors.accent || colors.stroke}30`,
-                  }}
-                />
-                {LEVELS.map(level => (
-                  <button
-                    key={level}
-                    onClick={() => setLevelOverride(level === activeLevel && !levelOverride ? null : level)}
-                    className="relative z-10 text-[11px] px-3 py-1 font-medium transition-colors duration-200"
-                    style={{
-                      color: activeLevel === level ? colors.text : '#64748b',
-                    }}
-                  >
-                    {LEVEL_LABELS[level]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <line
+            x1={connectorStart.x}
+            y1={connectorStart.y}
+            x2={connectorEnd.x}
+            y2={connectorEnd.y}
+            stroke={colors.stroke || 'var(--color-border-strong)'}
+            strokeWidth={1.5}
+            strokeDasharray="3 4"
+            opacity={0.6}
+          />
+          <circle
+            cx={connectorStart.x}
+            cy={connectorStart.y}
+            r={3}
+            fill={colors.stroke || 'var(--color-accent)'}
+          />
+        </svg>
+      )}
 
-          {/* Explanation text - collapsible */}
-          {loadingExplanation && !streamingExplanation ? (
-            <div className="flex items-center gap-2 text-xs py-2" style={{ color: '#94a3b8' }}>
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: colors.accent || colors.stroke, animation: 'processing-dot 1.4s infinite' }} />
-              Loading explanation...
-            </div>
-          ) : (
-            <div>
-              <p className="text-[13px] leading-[1.7]" style={{ color: '#cbd5e1' }}>
-                <KeywordHighlighter text={descExpanded ? displayDescription : summary} accentColor={colors.accent || colors.stroke} />
-                {streamingExplanation && (
-                  <span className="inline-block w-1.5 h-3 ml-0.5 rounded-sm" style={{ background: colors.accent || colors.stroke, animation: 'processing-dot 1s infinite' }} />
-                )}
-              </p>
-              {hasMore && !streamingExplanation && (
-                <button
-                  onClick={() => {
-                    const next = !descExpanded;
-                    setDescExpanded(next);
-                    // Fire engagement when user reads the full explanation
-                    if (next && selectedNode?.type === 'concept') {
-                      fireEngagement(selectedNode.id, 'read_explanation');
-                    }
-                  }}
-                  className="text-[11px] mt-2 font-medium transition-colors duration-200"
-                  style={{ color: colors.accent || colors.stroke }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
-                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                >
-                  {descExpanded ? 'Show less' : 'Read more'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Go deeper */}
-          {selectedNode.type === 'concept' && node.deep_explanation && (
-            <div className="mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <button
-                onClick={() => setDeepExpanded(v => !v)}
-                className="flex items-center gap-1.5 text-[11px] font-medium transition-all duration-200 active:scale-95"
-                style={{ color: '#64748b' }}
-                onMouseEnter={e => e.currentTarget.style.color = colors.text}
-                onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
-              >
-                <ChevronRight
-                  size={12}
-                  style={{
-                    transform: deepExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease-out',
-                  }}
-                />
-                {deepExpanded ? 'Show less' : 'Technical deep-dive'}
-              </button>
-              {deepExpanded && (
-                <div style={{ animation: 'fade-in 0.2s ease-out' }}>
-                  <p className="text-[12px] leading-[1.7] mt-3" style={{ color: '#94a3b8' }}>
-                    <KeywordHighlighter text={node.deep_explanation} accentColor={colors.accent || colors.stroke} />
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Concept-specific content */}
-        {selectedNode.type === 'concept' && (
-          <>
-            {/* Files section */}
+      {/* Popover card */}
+      <div
+        ref={cardRef}
+        data-test="inspector"
+        style={{
+          position: 'fixed',
+          left: anchor.x,
+          top: anchor.y,
+          width: POPOVER_W,
+          maxHeight: POPOVER_MAX_H,
+          zIndex: 50,
+          background: 'var(--color-bg-elevated)',
+          border: '1px solid var(--color-border-visible)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-lg)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          opacity: anchor.visible ? 1 : 0,
+          transform: anchor.visible ? 'translateX(0) scale(1)' : `translateX(${anchor.side === 'right' ? -8 : 8}px) scale(0.98)`,
+          transition: 'opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out)',
+          pointerEvents: anchor.visible ? 'auto' : 'none',
+        }}
+      >
+        {/* Header — drag handle */}
+        <div
+          onPointerDown={handleDragStart}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 14px',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            gap: 10,
+            flexShrink: 0,
+            cursor: 'grab',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
             <div
-              className="rounded-xl p-4"
               style={{
-                background: '#1e1e3a',
-                border: '1px solid rgba(255,255,255,0.06)',
+                width: 32,
+                height: 32,
+                borderRadius: 'var(--radius-sm)',
+                background: colors.fill,
+                border: `1px solid ${colors.stroke}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <FileCode2 size={13} style={{ color: '#64748b' }} />
-                  <span className="text-[10px] uppercase tracking-wider font-medium" style={{ color: '#64748b' }}>Files</span>
-                </div>
-                <span className="text-[10px] tabular-nums font-medium" style={{ color: colors.text }}>{conceptFiles.length}</span>
+              <ConceptIcon size={14} strokeWidth={1.75} color={colors.stroke} />
+            </div>
+            <div style={{ minWidth: 0, lineHeight: 1.2 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--color-text-primary)',
+                  letterSpacing: '-0.01em',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {node.name}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {conceptFiles.map(f => (
+              {selectedNode.type === 'concept' && node.importance && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    marginTop: 2,
+                    color:
+                      node.importance === 'critical' ? 'var(--color-error)'
+                      : node.importance === 'important' ? 'var(--color-warning)'
+                      : 'var(--color-text-tertiary)',
+                  }}
+                >
+                  {node.importance}
+                </div>
+              )}
+              {selectedNode.type === 'file' && concept && (
+                <div style={{ fontSize: 10, marginTop: 2, color: colors.stroke, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {(() => { const CI = getConceptIcon(concept.id); return <CI size={10} strokeWidth={1.75} />; })()}
+                  {concept.name}
+                </div>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={close}
+            aria-label="Close"
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-tertiary)',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: `all var(--duration-base) var(--ease-out)`,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-sunken)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div
+          style={{
+            overflowY: 'auto',
+            padding: '12px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          {selectedNode.type === 'concept' && <BridgeBanner />}
+
+          {/* Guided tour stepper (when on-path) */}
+          {isOnTourPath && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-accent-soft)',
+                border: '1px solid var(--color-border-strong)',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: 'var(--color-accent-active)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  flexShrink: 0,
+                }}
+              >
+                {guidedPosition + 1} / {explorationPath.length}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+                {explorationPath.map((key, i) => {
+                  const isVisited = exploredConcepts.has(key) || i < guidedPosition;
+                  const isCurrent = i === guidedPosition;
+                  const c = concepts.find(cc => cc.id === key);
+                  const segColor = c ? (CONCEPT_COLORS[c.color] || CONCEPT_COLORS.gray).stroke : 'var(--color-accent)';
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => handleJumpTo(i)}
+                      aria-label={c?.name}
+                      style={{
+                        width: isCurrent ? 18 : 6,
+                        height: 6,
+                        borderRadius: 999,
+                        background: isCurrent ? segColor : isVisited ? `${segColor}90` : 'var(--color-border-visible)',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        transition: 'all var(--duration-base) var(--ease-out)',
+                      }}
+                      title={c?.name}
+                    />
+                  );
+                })}
+              </div>
+              <button
+                onClick={exitGuidedMode}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  color: 'var(--color-text-tertiary)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+                title="Exit tour"
+              >
+                Exit
+              </button>
+            </div>
+          )}
+
+          {/* Off-path banner (user clicked away from the tour) */}
+          {isOffTourPath && (
+            <button
+              onClick={handleReturnToTour}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-accent-soft)',
+                border: '1px solid var(--color-border-strong)',
+                color: 'var(--color-accent-active)',
+                fontSize: 11,
+                fontWeight: 500,
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-border-strong)'; e.currentTarget.style.color = 'var(--color-text-inverse)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-accent-soft)'; e.currentTarget.style.color = 'var(--color-accent-active)'; }}
+            >
+              <Compass size={12} strokeWidth={1.75} />
+              Return to tour ({guidedPosition + 1}/{explorationPath.length})
+            </button>
+          )}
+
+          {/* Metaphor — compact pull quote */}
+          {selectedNode.type === 'concept' && node.metaphor && (
+            <div
+              style={{
+                fontSize: 12,
+                fontStyle: 'italic',
+                lineHeight: 1.55,
+                color: colors.text,
+                padding: '8px 12px',
+                background: colors.fill,
+                borderLeft: `2px solid ${colors.stroke}`,
+                borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+              }}
+            >
+              <KeywordHighlighter text={node.metaphor} accentColor={colors.stroke} />
+            </div>
+          )}
+
+          {/* Depth selector — only show when distinct depth explanations exist */}
+          {selectedNode.type === 'concept' && node.beginner_explanation && node.intermediate_explanation && node.advanced_explanation && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 2,
+                padding: 2,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-sunken)',
+                border: '1px solid var(--color-border-subtle)',
+              }}
+            >
+              {LEVELS.map(level => (
+                <button
+                  key={level}
+                  onClick={() => setActiveDepthLevel(level)}
+                  style={{
+                    flex: 1,
+                    fontSize: 11,
+                    fontWeight: 500,
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    background: activeLevel === level ? 'var(--color-bg-elevated)' : 'transparent',
+                    color: activeLevel === level ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: `all var(--duration-base) var(--ease-out)`,
+                    boxShadow: activeLevel === level ? 'var(--shadow-xs)' : 'none',
+                  }}
+                >
+                  {LEVEL_LABELS[level]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Explanation */}
+          {loadingExplanation && !streamingExplanation ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: colors.stroke, animation: 'processing-dot 1.4s infinite' }} />
+              Loading...
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-primary)' }}>
+              <KeywordHighlighter text={displayDescription} accentColor={colors.stroke} />
+              {streamingExplanation && (
+                <span style={{ display: 'inline-block', width: 6, height: 12, marginLeft: 2, borderRadius: 2, background: colors.stroke, animation: 'processing-dot 1s infinite' }} />
+              )}
+            </p>
+          )}
+
+          {/* Files — compact chip grid */}
+          {selectedNode.type === 'concept' && conceptFiles.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-tertiary)',
+                  marginBottom: 6,
+                }}
+              >
+                Files ({conceptFiles.length})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {conceptFiles.slice(0, 8).map(f => (
                   <button
                     key={f.id}
                     onClick={() => useStore.getState().setSelectedNode({ type: 'file', id: f.id })}
-                    className="mono text-[11px] px-2.5 py-1.5 rounded-lg transition-all duration-200 active:scale-95 flex items-center gap-1.5"
+                    className="mono"
                     style={{
-                      background: `${(colors.accent || colors.stroke)}10`,
-                      color: `${colors.text}cc`,
-                      border: `1px solid ${(colors.accent || colors.stroke)}18`,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      padding: '3px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: colors.fill,
+                      color: colors.text,
+                      border: `1px solid ${colors.stroke}40`,
+                      cursor: 'pointer',
+                      transition: `all var(--duration-base) var(--ease-out)`,
                     }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = `${(colors.accent || colors.stroke)}20`;
-                      e.currentTarget.style.borderColor = `${(colors.accent || colors.stroke)}35`;
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = `${(colors.accent || colors.stroke)}10`;
-                      e.currentTarget.style.borderColor = `${(colors.accent || colors.stroke)}18`;
-                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = colors.stroke; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = `${colors.stroke}40`; }}
                   >
-                    <FileCode2 size={11} style={{ opacity: 0.6 }} />
+                    <FileCode2 size={10} strokeWidth={1.75} style={{ opacity: 0.6 }} />
                     {f.name}
                   </button>
                 ))}
+                {conceptFiles.length > 8 && (
+                  <span style={{ fontSize: 11, padding: '3px 8px', color: 'var(--color-text-tertiary)' }}>
+                    +{conceptFiles.length - 8} more
+                  </span>
+                )}
               </div>
             </div>
+          )}
 
-            {/* Connections section */}
-            {relatedEdges.length > 0 && (
+          {/* Connections — compact list */}
+          {selectedNode.type === 'concept' && relatedEdges.length > 0 && (
+            <div>
               <div
-                className="rounded-xl p-4"
                 style={{
-                  background: '#1e1e3a',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  fontSize: 10,
+                  fontWeight: 500,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-tertiary)',
+                  marginBottom: 6,
                 }}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <ArrowRight size={13} style={{ color: '#64748b' }} />
-                    <span className="text-[10px] uppercase tracking-wider font-medium" style={{ color: '#64748b' }}>Connections</span>
-                  </div>
-                  <span className="text-[10px] tabular-nums font-medium" style={{ color: '#64748b' }}>{relatedEdges.length}</span>
-                </div>
-                <div className="space-y-1">
-                  {relatedEdges.map((edge, i) => {
-                    const isSource = edge.source === concept.id;
-                    const otherId = isSource ? edge.target : edge.source;
-                    const other = concepts.find(c => c.id === otherId);
-                    if (!other) return null;
-                    const otherColors = CONCEPT_COLORS[other.color] || CONCEPT_COLORS.gray;
-                    const isExpanded = expandedEdge === i;
-                    const OtherIcon = getConceptIcon(other.id);
-
-                    return (
-                      <div key={i}>
-                        <button
-                          onClick={() => {
-                            if (edge.explanation) setExpandedEdge(isExpanded ? null : i);
-                            else useStore.getState().setSelectedNode({ type: 'concept', id: otherId });
-                          }}
-                          className="flex items-center gap-2 text-[11px] w-full text-left transition-all duration-200 rounded-lg px-2.5 py-2 -mx-1"
-                          style={{ color: '#94a3b8' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                          {isSource ? <ArrowRight size={11} style={{ color: '#475569' }} /> : <ArrowLeft size={11} style={{ color: '#475569' }} />}
-                          <span
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg"
-                            style={{ background: `${(otherColors.accent || otherColors.stroke)}12`, border: `1px solid ${(otherColors.accent || otherColors.stroke)}18` }}
-                          >
-                            <OtherIcon size={11} style={{ color: otherColors.accent || otherColors.stroke }} />
-                            <span className="text-[11px] font-medium" style={{ color: otherColors.text }}>{other.name}</span>
-                          </span>
-                          <span className="flex-1 truncate" style={{ color: '#475569' }}>{edge.label}</span>
-                          {edge.explanation && (
-                            <ChevronRight
-                              size={11}
-                              style={{
-                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.2s ease-out',
-                                color: '#475569',
-                              }}
-                            />
-                          )}
-                        </button>
-                        {isExpanded && edge.explanation && (
-                          <div
-                            className="ml-7 mt-1 mb-2 pl-3"
-                            style={{
-                              borderLeft: `2px solid ${(otherColors.accent || otherColors.stroke)}25`,
-                              animation: 'fade-in 0.2s ease-out',
-                            }}
-                          >
-                            <p className="text-[11px] leading-relaxed" style={{ color: '#94a3b8' }}>
-                              <KeywordHighlighter text={edge.explanation} accentColor={colors.accent || colors.stroke} />
-                            </p>
-                            <button
-                              onClick={() => useStore.getState().setSelectedNode({ type: 'concept', id: otherId })}
-                              className="text-[11px] mt-2 font-medium transition-all duration-200 active:scale-95 flex items-center gap-1"
-                              style={{ color: otherColors.accent || otherColors.text }}
-                              onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
-                              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                            >
-                              View {other.name} <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                Connections ({relatedEdges.length})
               </div>
-            )}
-          </>
-        )}
-
-        {/* File-specific content */}
-        {selectedNode.type === 'file' && (
-          <>
-            {node.exports && node.exports.length > 0 && (
-              <div
-                className="rounded-xl p-4"
-                style={{
-                  background: '#1e1e3a',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                }}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Box size={13} style={{ color: '#64748b' }} />
-                    <span className="text-[10px] uppercase tracking-wider font-medium" style={{ color: '#64748b' }}>Exports</span>
-                  </div>
-                  <span className="text-[10px] tabular-nums font-medium" style={{ color: '#64748b' }}>{node.exports.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {node.exports.map((exp, i) => {
-                    const name = typeof exp === 'string' ? exp : exp.name;
-                    const desc = typeof exp === 'string' ? null : (exp.whatItDoes || null);
-                    return (
-                      <div
-                        key={i}
-                        className="rounded-lg px-3 py-2.5"
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {relatedEdges.slice(0, 6).map((edge, i) => {
+                  const isSource = edge.source === concept.id;
+                  const otherId = isSource ? edge.target : edge.source;
+                  const other = concepts.find(c => c.id === otherId);
+                  if (!other) return null;
+                  const otherColors = CONCEPT_COLORS[other.color] || CONCEPT_COLORS.gray;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        if (guidedMode) {
+                          const idx = explorationPath.indexOf(otherId);
+                          if (idx !== -1) useStore.getState().setGuidedPosition(idx);
+                        }
+                        useStore.getState().setSelectedNode({ type: 'concept', id: otherId });
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: 11,
+                        color: 'var(--color-text-secondary)',
+                        transition: `background var(--duration-base) var(--ease-out)`,
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-sunken)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {isSource
+                        ? <ArrowRight size={11} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                        : <ArrowLeft size={11} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                      }
+                      <span
                         style={{
-                          background: 'rgba(255,255,255,0.02)',
-                          border: '1px solid rgba(255,255,255,0.04)',
+                          fontWeight: 500,
+                          color: otherColors.text,
+                          background: otherColors.fill,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          flexShrink: 0,
+                          border: `1px solid ${otherColors.stroke}40`,
                         }}
                       >
-                        <span className="mono text-[11px] font-medium" style={{ color: '#e2e8f0' }}>{name}</span>
-                        {desc && <p className="text-[11px] mt-1 leading-relaxed" style={{ color: '#64748b' }}><KeywordHighlighter text={desc} accentColor={colors.accent || colors.stroke} /></p>}
-                      </div>
-                    );
-                  })}
-                </div>
+                        {other.name}
+                      </span>
+                      <span style={{ color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        {edge.label}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </>
-        )}
-
-        {/* Action buttons */}
-        <div className="space-y-2 pt-1">
-          {selectedNode.type === 'file' && (
-            <button
-              onClick={() => openCodePanel(node.id)}
-              className="w-full py-3 rounded-xl text-[13px] font-semibold transition-all duration-200 active:scale-[0.98]"
-              style={{
-                background: `linear-gradient(135deg, ${colors.fill}, ${(colors.accent || colors.stroke)}15)`,
-                color: colors.text,
-                border: `1px solid ${(colors.accent || colors.stroke)}30`,
-              }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = `${(colors.accent || colors.stroke)}50`}
-              onMouseLeave={e => e.currentTarget.style.borderColor = `${(colors.accent || colors.stroke)}30`}
-            >
-              Walk me through this file
-            </button>
+            </div>
           )}
-          <button
-            onClick={handleCopyPrompt}
-            className="w-full py-3 rounded-xl text-[13px] font-medium transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              color: '#94a3b8',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-              e.currentTarget.style.color = '#e2e8f0';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-              e.currentTarget.style.color = '#94a3b8';
-            }}
-          >
-            <Copy size={14} />
-            Copy prompt for Claude
-          </button>
+
+          {/* File exports */}
+          {selectedNode.type === 'file' && node.exports && node.exports.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-tertiary)',
+                  marginBottom: 6,
+                }}
+              >
+                Exports ({node.exports.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {node.exports.slice(0, 5).map((exp, i) => {
+                  const name = typeof exp === 'string' ? exp : exp.name;
+                  const desc = typeof exp === 'string' ? null : (exp.whatItDoes || null);
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--color-bg-sunken)',
+                        border: '1px solid var(--color-border-subtle)',
+                      }}
+                    >
+                      <span className="mono" style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>{name}</span>
+                      {desc && (
+                        <p style={{ fontSize: 11, marginTop: 2, lineHeight: 1.5, color: 'var(--color-text-tertiary)' }}>
+                          {desc}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 14px',
+            borderTop: '1px solid var(--color-border-subtle)',
+            background: 'var(--color-bg-surface)',
+            flexShrink: 0,
+          }}
+        >
+          {isOnTourPath ? (
+            <>
+              <button
+                onClick={handleBack}
+                disabled={isFirstStep}
+                aria-label="Previous concept"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'transparent',
+                  color: isFirstStep ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border-visible)',
+                  cursor: isFirstStep ? 'default' : 'pointer',
+                  opacity: isFirstStep ? 0.5 : 1,
+                }}
+              >
+                <ChevronLeft size={12} strokeWidth={1.75} />
+                Back
+              </button>
+              <button
+                onClick={handleCopyPrompt}
+                aria-label="Copy prompt for Claude"
+                style={{
+                  width: 32,
+                  height: 32,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'transparent',
+                  color: 'var(--color-text-tertiary)',
+                  border: '1px solid var(--color-border-visible)',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-text-primary)'; e.currentTarget.style.background = 'var(--color-bg-sunken)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
+                title="Copy prompt for Claude"
+              >
+                <Copy size={12} strokeWidth={1.75} />
+              </button>
+              <button
+                onClick={handleNext}
+                aria-label={isLastStep ? 'Finish tour' : 'Next concept'}
+                style={{
+                  flex: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: isLastStep ? 'var(--color-success)' : 'var(--color-accent)',
+                  color: 'var(--color-text-inverse)',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                {isLastStep ? (
+                  <>
+                    <Eye size={12} strokeWidth={1.75} />
+                    Explore freely
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ChevronRight size={12} strokeWidth={1.75} />
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              {selectedNode.type === 'file' && (
+                <button
+                  onClick={() => openCodePanel(node.id)}
+                  style={{
+                    flex: 1,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: colors.stroke,
+                    color: 'var(--color-text-inverse)',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Walk me through this file
+                </button>
+              )}
+              <button
+                onClick={handleCopyPrompt}
+                style={{
+                  flex: 1,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'transparent',
+                  color: 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border-visible)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  transition: `all var(--duration-base) var(--ease-out)`,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-sunken)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              >
+                <Copy size={11} strokeWidth={1.75} />
+                Copy prompt
+              </button>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

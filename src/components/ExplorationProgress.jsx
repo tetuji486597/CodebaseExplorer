@@ -14,15 +14,15 @@ export default function ExplorationProgress() {
         <div
           className="flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-medium"
           style={{
-            background: 'rgba(20, 20, 43, 0.92)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--color-bg-elevated)',
+            border: '1px solid var(--color-border-visible)',
             backdropFilter: 'blur(12px)',
-            color: '#a5b4fc',
+            color: 'var(--color-accent-active)',
             animation: 'fade-in 0.3s ease-out',
             boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
           }}
         >
-          <span style={{ color: '#f59e0b' }}>
+          <span style={{ color: 'var(--color-warning)' }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path d="M6 1L7.5 4.5L11 5.5L8.5 8L9 11.5L6 10L3 11.5L3.5 8L1 5.5L4.5 4.5L6 1Z" fill="currentColor"/>
             </svg>
@@ -31,9 +31,9 @@ export default function ExplorationProgress() {
           <button
             onClick={() => setSuggestionBanner(null)}
             className="ml-1 text-xs transition-colors duration-200"
-            style={{ color: '#475569' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-            onMouseLeave={e => e.currentTarget.style.color = '#475569'}
+            style={{ color: 'var(--color-text-tertiary)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <path d="M2 2L8 8M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -47,13 +47,13 @@ export default function ExplorationProgress() {
         <div
           className="flex items-center gap-2.5 px-4 py-1.5 rounded-xl text-xs font-medium"
           style={{
-            background: 'rgba(20, 20, 43, 0.88)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--color-bg-elevated)',
+            border: '1px solid var(--color-border-subtle)',
             backdropFilter: 'blur(12px)',
             boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
           }}
         >
-          <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--color-border-subtle)' }}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
@@ -62,7 +62,7 @@ export default function ExplorationProgress() {
               }}
             />
           </div>
-          <span style={{ color: '#94a3b8' }}>
+          <span style={{ color: 'var(--color-text-secondary)' }}>
             {Math.round(explorationProgress * 100)}% explored
           </span>
         </div>

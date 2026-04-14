@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { supabase } from '../db/supabase.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
+import { computeContentHash, findCachedProject } from '../pipeline/contentHash.js';
 import JSZip from 'jszip';
 
 const app = new Hono();
@@ -44,26 +45,35 @@ function shouldIncludeFile(path: string): boolean {
 }
 
 // POST /api/github/analyze - Download a GitHub repo and start the analysis pipeline
+// Supports both authenticated (OAuth token) and anonymous (public repo) requests.
 app.post('/analyze', async (c) => {
-  const { repoFullName, accessToken } = await c.req.json();
+  const { repoFullName, accessToken, ref, userId } = await c.req.json();
 
-  if (!repoFullName || !accessToken) {
-    return c.json({ error: 'Missing repoFullName or accessToken' }, 400);
+  if (!repoFullName || !/^[^/\s]+\/[^/\s]+$/.test(repoFullName)) {
+    return c.json({ error: 'Missing or invalid repoFullName (expected "owner/repo")' }, 400);
   }
 
   try {
-    // Download the repo as a zip from GitHub
-    const zipRes = await fetch(`https://api.github.com/repos/${repoFullName}/zipball`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/vnd.github.v3+json',
-      },
-      redirect: 'follow',
-    });
+    // Download the repo as a zip from GitHub.
+    // Anonymous requests to public repos are allowed (rate-limited to 60/hr/IP).
+    const zipUrl = `https://api.github.com/repos/${repoFullName}/zipball/${ref || 'HEAD'}`;
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'codebase-explorer',
+    };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+    const zipRes = await fetch(zipUrl, { headers, redirect: 'follow' });
 
     if (!zipRes.ok) {
       const errText = await zipRes.text();
       console.error('GitHub zip download failed:', zipRes.status, errText);
+      if (zipRes.status === 404) {
+        return c.json({ error: 'Repository not found. If it is private, sign in with GitHub to continue.' }, 404);
+      }
+      if (zipRes.status === 403) {
+        return c.json({ error: 'GitHub rate limit reached. Sign in with GitHub to bypass the anonymous limit.' }, 403);
+      }
       return c.json({ error: `Failed to download repo: ${zipRes.status}` }, 502);
     }
 
@@ -110,15 +120,27 @@ app.post('/analyze', async (c) => {
       return c.json({ error: 'No source files found in repository' }, 400);
     }
 
+    // Check for cached project with same content
+    const contentHash = computeContentHash(fileContents);
+    const cachedId = await findCachedProject(contentHash);
+    if (cachedId) {
+      console.log(`GitHub cache hit for ${repoFullName}, hash ${contentHash}, project ${cachedId}`);
+      return c.json({ projectId: cachedId, cached: true });
+    }
+
     // Create project
     const projectName = repoFullName.split('/').pop() || repoFullName;
+    const insertData: Record<string, unknown> = {
+      name: projectName,
+      pipeline_status: 'pending',
+      file_count: Object.keys(fileContents).length,
+      content_hash: contentHash,
+    };
+    if (userId) insertData.user_id = userId;
+
     const { data: project, error } = await supabase
       .from('projects')
-      .insert({
-        name: projectName,
-        pipeline_status: 'pending',
-        file_count: Object.keys(fileContents).length,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -132,7 +154,7 @@ app.post('/analyze', async (c) => {
       console.error('Pipeline failed:', err);
     });
 
-    return c.json({ projectId: project.id });
+    return c.json({ projectId: project.id, cached: false });
   } catch (err: any) {
     console.error('GitHub analyze error:', err);
     return c.json({ error: err.message || 'Internal error' }, 500);

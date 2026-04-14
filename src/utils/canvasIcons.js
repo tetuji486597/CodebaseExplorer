@@ -206,26 +206,9 @@ export const CONCEPT_ICON_MAP = {
   'email': 'mail',
 };
 
-// Fallback: try to map emoji to icon
-export const EMOJI_ICON_MAP = {
-  '\u{1F5C4}\uFE0F': 'database',  // 🗄️
-  '\u{1F511}': 'key',             // 🔑
-  '\u{1F3E0}': 'home',            // 🏠
-  '\u{1F4F8}': 'image',           // 📸
-  '\u{1F464}': 'user',            // 👤
-  '\u{1F514}': 'bell',            // 🔔
-  '\u{1F5C2}\uFE0F': 'folder',    // 🗂️
-  '\u{1F50D}': 'search',          // 🔍
-  '\u{2709}\uFE0F': 'mail',       // ✉️
-  '\u{1F4E6}': 'box',             // 📦
-  '\u{1F4C1}': 'folder',          // 📁
-};
-
 export function getIconForNode(node) {
   // Try concept ID first
   if (CONCEPT_ICON_MAP[node.id]) return CONCEPT_ICON_MAP[node.id];
-  // Try emoji mapping
-  if (node.emoji && EMOJI_ICON_MAP[node.emoji]) return EMOJI_ICON_MAP[node.emoji];
   // Default
   return 'box';
 }

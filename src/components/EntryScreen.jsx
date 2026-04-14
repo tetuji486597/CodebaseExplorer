@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router';
 import { Upload, BookOpen, Sparkles, User, Bot, Users } from 'lucide-react';
 
 const ORIGIN_OPTIONS = [
-  { value: 'self_built', label: 'I built it myself', Icon: User, color: '#10b981' },
-  { value: 'ai_built', label: 'AI built most of it', Icon: Bot, color: '#8b5cf6' },
-  { value: 'someone_else', label: 'Someone else built it', Icon: Users, color: '#f59e0b' },
+  { value: 'self_built', label: 'I built it myself', Icon: User, color: 'var(--color-success)' },
+  { value: 'ai_built', label: 'AI built most of it', Icon: Bot, color: 'var(--color-accent)' },
+  { value: 'someone_else', label: 'Someone else built it', Icon: Users, color: 'var(--color-warning)' },
 ];
 
 export default function EntryScreen() {
@@ -15,7 +15,7 @@ export default function EntryScreen() {
   return (
     <div
       className="w-full min-h-full flex flex-col items-center justify-center relative overflow-hidden px-4 py-12"
-      style={{ background: '#0a0a14' }}
+      style={{ background: 'var(--color-bg-base)' }}
     >
       {/* Background orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -43,10 +43,10 @@ export default function EntryScreen() {
           <circle cx="12" cy="12" r="10"/>
           <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
         </svg>
-        <h1 className="text-2xl font-semibold tracking-tight font-heading" style={{ color: '#e2e8f0' }}>
+        <h1 className="text-2xl font-semibold tracking-tight font-heading" style={{ color: 'var(--color-text-primary)' }}>
           Codebase Explorer
         </h1>
-        <p className="text-sm mt-2 max-w-xs mx-auto" style={{ color: '#64748b' }}>
+        <p className="text-sm mt-2 max-w-xs mx-auto" style={{ color: 'var(--color-text-tertiary)' }}>
           Understand software architecture by exploring real code
         </p>
       </div>
@@ -58,28 +58,28 @@ export default function EntryScreen() {
           onClick={() => navigate('/upload', { state: { originContext } })}
           className="group rounded-2xl p-6 text-left transition-all duration-300 active:scale-[0.98]"
           style={{
-            background: '#12131f',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-subtle)',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.3)';
-            e.currentTarget.style.boxShadow = '0 0 30px rgba(99, 102, 241, 0.08)';
+            e.currentTarget.style.borderColor = 'var(--color-border-strong)';
+            e.currentTarget.style.boxShadow = '0 0 30px var(--color-accent-soft)';
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+            e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
           <div
             className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-            style={{ background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.15)' }}
+            style={{ background: 'var(--color-accent-soft)', border: '1px solid var(--color-accent-soft)' }}
           >
-            <Upload size={22} style={{ color: '#818cf8' }} />
+            <Upload size={22} style={{ color: 'var(--color-accent)' }} />
           </div>
-          <h2 className="text-lg font-semibold mb-1.5 font-heading" style={{ color: '#e2e8f0' }}>
+          <h2 className="text-lg font-semibold mb-1.5 font-heading" style={{ color: 'var(--color-text-primary)' }}>
             Understand my codebase
           </h2>
-          <p className="text-sm leading-relaxed" style={{ color: '#94a3b8' }}>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
             Upload a .zip of your project and get an interactive architecture map with AI-powered explanations
           </p>
         </button>
@@ -89,15 +89,15 @@ export default function EntryScreen() {
           onClick={() => navigate('/library')}
           className="group rounded-2xl p-6 text-left transition-all duration-300 active:scale-[0.98]"
           style={{
-            background: '#12131f',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-subtle)',
           }}
           onMouseEnter={e => {
             e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
             e.currentTarget.style.boxShadow = '0 0 30px rgba(16, 185, 129, 0.08)';
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+            e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
@@ -105,12 +105,12 @@ export default function EntryScreen() {
             className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
             style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.15)' }}
           >
-            <BookOpen size={22} style={{ color: '#6ee7b7' }} />
+            <BookOpen size={22} style={{ color: 'var(--color-success)' }} />
           </div>
-          <h2 className="text-lg font-semibold mb-1.5 font-heading" style={{ color: '#e2e8f0' }}>
+          <h2 className="text-lg font-semibold mb-1.5 font-heading" style={{ color: 'var(--color-text-primary)' }}>
             Learn by exploring
           </h2>
-          <p className="text-sm leading-relaxed" style={{ color: '#94a3b8' }}>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
             Explore curated open-source codebases to learn programming concepts step by step
           </p>
         </button>
@@ -120,12 +120,12 @@ export default function EntryScreen() {
       <div
         className="z-10 w-full max-w-2xl mt-6 rounded-2xl p-5"
         style={{
-          background: '#12131f',
-          border: '1px solid rgba(255,255,255,0.06)',
+          background: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)',
           animation: 'fade-in 1s ease-out 0.4s both',
         }}
       >
-        <p className="text-xs font-medium mb-3" style={{ color: '#64748b' }}>
+        <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-text-tertiary)' }}>
           For uploads — how did this codebase come to exist?
         </p>
         <div className="flex flex-wrap gap-2">
@@ -137,9 +137,9 @@ export default function EntryScreen() {
                 onClick={() => setOriginContext(isActive ? null : value)}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium transition-all duration-200 active:scale-95"
                 style={{
-                  background: isActive ? `${color}15` : 'rgba(255,255,255,0.03)',
-                  color: isActive ? color : '#64748b',
-                  border: `1px solid ${isActive ? `${color}30` : 'rgba(255,255,255,0.06)'}`,
+                  background: isActive ? `${color}15` : 'var(--color-bg-sunken)',
+                  color: isActive ? color : 'var(--color-text-tertiary)',
+                  border: `1px solid ${isActive ? `${color}30` : 'var(--color-border-subtle)'}`,
                 }}
               >
                 <Icon size={14} />
@@ -148,7 +148,7 @@ export default function EntryScreen() {
             );
           })}
         </div>
-        <p className="text-[11px] mt-2.5" style={{ color: '#475569' }}>
+        <p className="text-[11px] mt-2.5" style={{ color: 'var(--color-text-tertiary)' }}>
           This helps us calibrate explanations. Skip if you prefer.
         </p>
       </div>
@@ -158,9 +158,9 @@ export default function EntryScreen() {
         <button
           onClick={() => navigate('/profile')}
           className="flex items-center gap-2 text-xs font-medium transition-all duration-200"
-          style={{ color: '#475569' }}
-          onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-          onMouseLeave={e => e.currentTarget.style.color = '#475569'}
+          style={{ color: 'var(--color-text-tertiary)' }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
         >
           <Sparkles size={13} />
           View your skill profile

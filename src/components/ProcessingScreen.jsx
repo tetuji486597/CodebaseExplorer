@@ -35,7 +35,7 @@ export default function ProcessingScreen() {
   }, [processingStatus, pipelineProgress]);
 
   useEffect(() => {
-    const colors = ['#6366f1', '#8b5cf6', '#10b981', '#06b6d4', '#f59e0b', '#ec4899'];
+    const colors = ['var(--color-accent)', 'var(--color-accent)', 'var(--color-success)', '#06b6d4', 'var(--color-warning)', '#ec4899'];
     const newDots = Array.from({ length: 30 }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
@@ -53,7 +53,7 @@ export default function ProcessingScreen() {
   return (
     <div
       className="w-full h-full flex flex-col items-center justify-center relative"
-      style={{ background: '#0a0a1a' }}
+      style={{ background: 'var(--color-bg-base)' }}
     >
       {/* Floating dots constellation */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -94,7 +94,7 @@ export default function ProcessingScreen() {
         <div className="relative w-24 h-24 mx-auto mb-8">
           <div
             className="absolute inset-0 rounded-full border"
-            style={{ borderColor: 'rgba(99, 102, 241, 0.2)', animation: 'pulse-scale 2s ease-in-out infinite' }}
+            style={{ borderColor: 'var(--color-border-strong)', animation: 'pulse-scale 2s ease-in-out infinite' }}
           />
           <div
             className="absolute inset-2 rounded-full border"
@@ -105,12 +105,12 @@ export default function ProcessingScreen() {
             style={{ borderColor: 'rgba(16, 185, 129, 0.2)', animation: 'pulse-scale 2s ease-in-out infinite 0.6s' }}
           />
           <div className="absolute inset-0 flex items-center justify-center">
-            <ActiveIcon size={32} style={{ color: '#6366f1' }} />
+            <ActiveIcon size={32} style={{ color: 'var(--color-accent)' }} />
           </div>
         </div>
 
         {/* Current status message */}
-        <p className="text-sm font-medium mb-6" style={{ color: '#a5b4fc' }}>
+        <p className="text-sm font-medium mb-6" style={{ color: 'var(--color-accent-active)' }}>
           {processingStatus || 'Starting...'}
         </p>
 
@@ -128,14 +128,14 @@ export default function ProcessingScreen() {
               <div
                 className="w-2 h-2 rounded-full transition-all duration-500"
                 style={{
-                  background: i <= activeStep ? '#6366f1' : 'rgba(255,255,255,0.08)',
+                  background: i <= activeStep ? 'var(--color-accent)' : 'var(--color-border-visible)',
                   boxShadow: i === activeStep ? '0 0 8px rgba(99, 102, 241, 0.5)' : 'none',
                 }}
               />
               <span
                 className="text-sm"
                 style={{
-                  color: i <= activeStep ? '#e2e8f0' : '#475569',
+                  color: i <= activeStep ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                   fontWeight: i === activeStep ? 500 : 400,
                 }}
               >

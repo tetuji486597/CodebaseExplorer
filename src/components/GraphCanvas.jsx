@@ -1,8 +1,11 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import posthog from '../lib/posthog';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
 import { createConceptLayout, createFileLayout } from '../utils/graphLayout';
 import { drawIcon, getIconForNode } from '../utils/canvasIcons';
+import { graphViewport } from '../lib/graphViewport';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 const DPR = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
@@ -178,12 +181,15 @@ export default function GraphCanvas() {
     ctx.save();
     ctx.scale(DPR, DPR);
 
-    // Background - deep navy
-    ctx.fillStyle = '#0a0a1a';
+    // Background — read from CSS variable so it follows theme toggle
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bgColor = rootStyle.getPropertyValue('--color-bg-base').trim() || '#F3EEEA';
+    const gridColor = rootStyle.getPropertyValue('--color-border-subtle').trim() || '#CFC0BD';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, w, h);
 
-    // Subtle grid with navy tones
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.03)';
+    // Subtle grid
+    ctx.strokeStyle = gridColor + '55';
     ctx.lineWidth = 0.5;
     const gridSize = 40 * t.scale;
     const offsetX = (t.x % gridSize);
@@ -463,7 +469,7 @@ export default function GraphCanvas() {
         if (node.fileCount) {
           const badgeText = `${node.fileCount} files`;
           ctx.font = `400 ${Math.max(9, Math.round(displayR * 0.2))}px 'Inter', sans-serif`;
-          ctx.fillStyle = '#94a3b8';
+          ctx.fillStyle = rootStyle.getPropertyValue('--color-text-tertiary').trim() || '#8A9691';
           ctx.fillText(badgeText, drawX, drawY + displayR + 32);
         }
 
@@ -474,14 +480,14 @@ export default function GraphCanvas() {
           const badgeR = 9;
           ctx.beginPath();
           ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
-          ctx.fillStyle = '#10b981';
+          ctx.fillStyle = rootStyle.getPropertyValue('--color-success').trim() || '#6E8A6A';
           ctx.fill();
           // Checkmark
           ctx.beginPath();
           ctx.moveTo(badgeX - 4, badgeY);
           ctx.lineTo(badgeX - 1, badgeY + 3);
           ctx.lineTo(badgeX + 4, badgeY - 3);
-          ctx.strokeStyle = '#fff';
+          ctx.strokeStyle = rootStyle.getPropertyValue('--color-text-inverse').trim() || '#F3EEEA';
           ctx.lineWidth = 1.8;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
@@ -511,7 +517,7 @@ export default function GraphCanvas() {
         if (t.scale > 0.7 || isSelected || isHovered) {
           ctx.font = `400 ${Math.max(8, 10 / Math.max(t.scale, 0.5))}px 'JetBrains Mono', monospace`;
           ctx.textAlign = 'center';
-          ctx.fillStyle = isSelected || isHovered ? colors.text : '#94a3b8';
+          ctx.fillStyle = isSelected || isHovered ? colors.text : (rootStyle.getPropertyValue('--color-text-secondary').trim() || '#586F6B');
           ctx.fillText(node.name, drawX, drawY + displayR + 12);
         }
       }
@@ -525,6 +531,19 @@ export default function GraphCanvas() {
     // Disable entrance after all nodes have appeared
     if (entrance.active && entranceElapsed > 2000) {
       entranceRef.current.active = false;
+    }
+
+    // Publish viewport state so the ConceptPopover can track the selected
+    // node's on-screen position without going through React re-renders.
+    graphViewport.transform = {
+      x: transformRef.current.x,
+      y: transformRef.current.y,
+      scale: transformRef.current.scale,
+    };
+    graphViewport.nodes = nodesRef.current;
+    if (canvasRef.current) {
+      const r = canvasRef.current.getBoundingClientRect();
+      graphViewport.canvasRect = r;
     }
 
     timeRef.current += 16;
@@ -554,11 +573,17 @@ export default function GraphCanvas() {
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
       sizeRef.current = { w, h };
+      // Share canvas bounds with the popover layer
+      graphViewport.canvasRect = canvas.getBoundingClientRect();
     };
 
     resize();
     window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    window.addEventListener('scroll', resize, { passive: true });
+    return () => {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('scroll', resize);
+    };
   }, []);
 
   // Hit testing
@@ -667,6 +692,7 @@ export default function GraphCanvas() {
       const hit = hitTest(clientX, clientY);
 
       if (hit) {
+        posthog.capture('node_selected', { node_type: hit.type });
         setSelectedNode({ type: hit.type, id: hit.id });
         setShowInspector(true);
       } else {
@@ -695,6 +721,16 @@ export default function GraphCanvas() {
     transformRef.current.scale = newScale;
   }, []);
 
+  // Attach wheel listener with { passive: false } so preventDefault() actually works.
+  // React 19 registers onWheel as passive, which silently ignores preventDefault(),
+  // allowing the browser's native Ctrl+scroll / pinch zoom to fire on the whole page.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [handleWheel]);
+
   // Keyboard handler
   useEffect(() => {
     const handleKey = (e) => {
@@ -708,12 +744,31 @@ export default function GraphCanvas() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [clearSelection, setShowInspector]);
 
+  const zoomByFactor = useCallback((factor) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+
+    const newScale = Math.max(0.2, Math.min(3, transformRef.current.scale * factor));
+    const ratio = newScale / transformRef.current.scale;
+
+    transformRef.current.x = cx - ratio * (cx - transformRef.current.x);
+    transformRef.current.y = cy - ratio * (cy - transformRef.current.y);
+    transformRef.current.scale = newScale;
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    transformRef.current = { x: 0, y: 0, scale: 1 };
+    targetTransformRef.current = null;
+  }, []);
+
   return (
-    <>
+    <div className="eg-center" style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full"
-        style={{ touchAction: 'none' }}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }}
         onMouseDown={handlePointerDown}
         onMouseMove={handlePointerMove}
         onMouseUp={handlePointerUp}
@@ -721,7 +776,6 @@ export default function GraphCanvas() {
         onTouchStart={handlePointerDown}
         onTouchMove={handlePointerMove}
         onTouchEnd={handlePointerUp}
-        onWheel={handleWheel}
       />
       {/* Tooltip overlay */}
       {tooltip && (
@@ -734,27 +788,28 @@ export default function GraphCanvas() {
           }}
         >
           <div style={{
-            background: '#1e1e3a',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '10px',
+            background: 'var(--color-bg-elevated)',
+            border: '1px solid var(--color-border-visible)',
+            borderRadius: 'var(--radius-md)',
             padding: '10px 14px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-            maxWidth: '260px',
+            boxShadow: 'var(--shadow-lg)',
+            maxWidth: 260,
           }}>
             <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '13px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 13,
               fontWeight: 600,
-              color: '#e2e8f0',
-              marginBottom: '4px',
+              color: 'var(--color-text-primary)',
+              marginBottom: 4,
+              letterSpacing: '-0.01em',
             }}>
               {tooltip.name}
             </div>
             {tooltip.summary && (
               <div style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '11px',
-                color: '#94a3b8',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 11,
+                color: 'var(--color-text-secondary)',
                 lineHeight: 1.5,
               }}>
                 {tooltip.summary}
@@ -762,12 +817,15 @@ export default function GraphCanvas() {
             )}
             {tooltip.importance && (
               <div style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '10px',
-                color: tooltip.importance === 'critical' ? '#ef4444' : tooltip.importance === 'important' ? '#f59e0b' : '#94a3b8',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                color:
+                  tooltip.importance === 'critical' ? 'var(--color-error)'
+                  : tooltip.importance === 'important' ? 'var(--color-warning)'
+                  : 'var(--color-text-tertiary)',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginTop: '4px',
+                letterSpacing: '0.06em',
+                marginTop: 4,
               }}>
                 {tooltip.importance}
               </div>
@@ -775,6 +833,58 @@ export default function GraphCanvas() {
           </div>
         </div>
       )}
-    </>
+
+      {/* Zoom controls */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 16,
+          right: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          borderRadius: 'var(--radius-md)',
+          overflow: 'hidden',
+          border: '1px solid var(--color-border-visible)',
+          boxShadow: 'var(--shadow-soft)',
+          zIndex: 10,
+        }}
+      >
+        {[
+          { icon: ZoomIn, action: () => zoomByFactor(1.25), label: 'Zoom in' },
+          { icon: ZoomOut, action: () => zoomByFactor(0.8), label: 'Zoom out' },
+          { icon: Maximize2, action: resetZoom, label: 'Reset view' },
+        ].map(({ icon: Icon, action, label }) => (
+          <button
+            key={label}
+            onClick={action}
+            title={label}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 36,
+              height: 36,
+              background: 'var(--color-bg-surface)',
+              border: 'none',
+              borderBottom: '1px solid var(--color-border-subtle)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              transition: 'background 150ms ease-out, color 150ms ease-out',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--color-bg-elevated)';
+              e.currentTarget.style.color = 'var(--color-text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--color-bg-surface)';
+              e.currentTarget.style.color = 'var(--color-text-secondary)';
+            }}
+          >
+            <Icon size={16} strokeWidth={1.5} />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

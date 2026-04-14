@@ -10,11 +10,16 @@ export async function runDepthMapping(
   synthesis: ConceptSynthesisResult,
   fileAnalyses: FileAnalysis[]
 ) {
-  // Run two parallel Claude calls
-  await Promise.all([
+  if (!synthesis.concepts.length) return;
+
+  const tasks: Promise<void>[] = [
     generateMultiLevelExplanations(projectId, synthesis, fileAnalyses),
-    generateRelationshipExplanations(projectId, synthesis, fileAnalyses),
-  ]);
+  ];
+  // Only generate relationship explanations if there are edges to explain
+  if (synthesis.edges.length > 0) {
+    tasks.push(generateRelationshipExplanations(projectId, synthesis, fileAnalyses));
+  }
+  await Promise.all(tasks);
 }
 
 async function generateMultiLevelExplanations(
@@ -41,11 +46,11 @@ Metaphor: ${c.metaphor}`
         advanced_explanation: string;
       }>;
     }>({
-      system: `Generate three levels of explanation for each concept, targeting CS students who know basic OOP, data structures, and algorithms:
-- Beginner (Conceptual): Uses analogies to CS concepts they already know (classes, interfaces, inheritance, hash maps). Explains the "what" and "why" of this architectural piece.
-- Intermediate (Applied): Connects to design patterns and software engineering principles (MVC, observer, factory, separation of concerns). Explains how this concept fits into the overall system architecture.
-- Advanced (Under the Hood): Dives into implementation details — specific libraries, framework internals, performance trade-offs, and how an experienced engineer would evaluate this code.
-Respond with ONLY valid JSON, no markdown.`,
+      system: `Generate three levels of explanation for each architectural concept, targeting developers joining a new codebase (new hires, open-source contributors, technical reviewers):
+- Beginner (Conceptual): Plain-language overview using real-world analogies. Explains "what this does" and "why it exists" without assuming familiarity with the codebase.
+- Intermediate (Applied): Connects to design patterns and engineering principles (MVC, observer, dependency injection, separation of concerns). Explains how this concept fits into the system architecture, referencing specific functions and data flows.
+- Advanced (Under the Hood): Implementation details — specific libraries, framework internals, performance trade-offs, security considerations, and what an experienced engineer would want to know before modifying this code.
+Each level MUST be meaningfully different from the others — not the same idea reworded. Respond with ONLY valid JSON, no markdown.`,
       prompt: `Generate multi-level explanations for these concepts:
 
 ${conceptDescriptions}
@@ -53,7 +58,8 @@ ${conceptDescriptions}
 Return JSON with a "concepts" array where each item has: id, beginner_explanation, intermediate_explanation, advanced_explanation.`,
       schema: depthMappingSchema,
       schemaName: 'depth_mapping',
-      maxTokens: 4096,
+      maxTokens: synthesis.concepts.length <= 3 ? 2048 : 4096,
+      model: 'fast',
     });
 
     // Update concepts with level explanations (batch via Promise.all)
@@ -93,7 +99,7 @@ async function generateRelationshipExplanations(
     const result = await callClaudeStructured<{
       edges: Array<{ source: string; target: string; explanation: string }>;
     }>({
-      system: `For each relationship between concepts, explain how they interact using proper CS terminology. Reference specific files, describe data flow or control flow, and connect to patterns the student may recognize (e.g., dependency injection, event-driven communication, shared state). Respond with ONLY valid JSON, no markdown.`,
+      system: `For each relationship between concepts, explain how they interact using precise engineering terminology. Reference specific files, describe data flow or control flow, and connect to well-known patterns (e.g., dependency injection, event-driven communication, shared state, pub/sub). Respond with ONLY valid JSON, no markdown.`,
       prompt: `Explain these concept relationships:
 
 ${edgeDescriptions}
@@ -104,6 +110,7 @@ Return JSON with an "edges" array where each item has: source, target, explanati
       schema: relationshipDepthSchema,
       schemaName: 'relationship_depth',
       maxTokens: 4096,
+      model: 'fast',
     });
 
     const edges = Array.isArray(result?.edges) ? result.edges : [];

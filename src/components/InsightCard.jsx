@@ -4,11 +4,11 @@ import { Building2, AlertTriangle, RefreshCw, Sparkles, Lightbulb, Puzzle, X } f
 import KeywordHighlighter from './KeywordHighlighter';
 
 const CATEGORY_COLORS = {
-  architecture: '#6366f1',
-  risk: '#ef4444',
-  pattern: '#8b5cf6',
-  praise: '#10b981',
-  suggestion: '#f59e0b',
+  architecture: 'var(--color-accent)',
+  risk: 'var(--color-error)',
+  pattern: 'var(--color-accent)',
+  praise: 'var(--color-success)',
+  suggestion: 'var(--color-warning)',
   complexity: '#ec4899',
 };
 
@@ -27,7 +27,7 @@ export default function InsightCard() {
 
   if (!insightCard) return null;
 
-  const color = CATEGORY_COLORS[insightCard.category] || '#94a3b8';
+  const color = CATEGORY_COLORS[insightCard.category] || 'var(--color-text-secondary)';
   const Icon = CATEGORY_ICONS[insightCard.category] || Lightbulb;
 
   const dismiss = () => {
@@ -43,7 +43,7 @@ export default function InsightCard() {
       <div
         className="rounded-xl overflow-hidden"
         style={{
-          background: '#14142b',
+          background: 'var(--color-bg-elevated)',
           border: `1px solid ${color}30`,
           boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${color}10`,
         }}
@@ -62,9 +62,9 @@ export default function InsightCard() {
           <button
             onClick={dismiss}
             className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors duration-200"
-            style={{ color: '#475569' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-            onMouseLeave={e => e.currentTarget.style.color = '#475569'}
+            style={{ color: 'var(--color-text-tertiary)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
           >
             <X size={12} />
           </button>
@@ -72,15 +72,15 @@ export default function InsightCard() {
 
         {/* Content */}
         <div className="px-4 py-3">
-          <h3 className="text-sm font-medium mb-1" style={{ color: '#e2e8f0' }}>
+          <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
             {insightCard.title}
           </h3>
-          <p className="text-xs leading-relaxed" style={{ color: '#94a3b8' }}>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
             <KeywordHighlighter text={insightCard.summary} accentColor={color} />
           </p>
 
           {expanded && (
-            <p className="text-xs leading-relaxed mt-2" style={{ color: '#cbd5e1', animation: 'fade-in 0.2s ease-out' }}>
+            <p className="text-xs leading-relaxed mt-2" style={{ color: 'var(--color-text-primary)', animation: 'fade-in 0.2s ease-out' }}>
               <KeywordHighlighter text={insightCard.detail} accentColor={color} />
             </p>
           )}
@@ -100,9 +100,9 @@ export default function InsightCard() {
           <button
             onClick={dismiss}
             className="text-xs font-medium px-2.5 py-1 rounded-lg transition-all duration-200"
-            style={{ color: '#64748b' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-            onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+            style={{ color: 'var(--color-text-tertiary)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
           >
             Dismiss
           </button>

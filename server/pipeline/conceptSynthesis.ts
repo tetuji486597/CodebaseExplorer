@@ -8,7 +8,6 @@ export interface ConceptSynthesisResult {
   concepts: Array<{
     id: string;
     name: string;
-    emoji: string;
     color: string;
     metaphor: string;
     one_liner: string;
@@ -51,7 +50,7 @@ Dependencies: ${(f.depends_on || []).join(', ')}`
   const allPaths = fileAnalyses.map((f) => f.path);
 
   const raw = await callClaudeStructured<any>({
-    system: `You are synthesizing an architecture map from file analyses for CS students learning software architecture. Create meaningful architectural concepts that group related files. Name concepts using proper CS/software engineering terminology where applicable (e.g., "Authentication Middleware", "REST API Layer", "State Management", "Data Access Layer") rather than generic labels. For the "metaphor" field, relate concepts to CS fundamentals the student already knows (e.g., "Think of this like the observer pattern — but applied at the module level"). For "explanation", use CS terminology they know (classes, interfaces, APIs, HTTP) but explain architectural concepts they may not know yet (dependency injection, middleware pipelines, service layers).
+    system: `You are synthesizing an architecture map from file analyses for developers joining a new codebase (onboarding engineers, due-diligence reviewers, open-source contributors, legacy-code auditors). Create meaningful architectural concepts that group related files. Name concepts using proper software engineering terminology where applicable (e.g., "Authentication Middleware", "REST API Layer", "State Management", "Data Access Layer") rather than generic labels. For the "metaphor" field, give a concise real-world analogy that helps someone quickly grasp the concept's role (e.g., "Acts as a security checkpoint — every request passes through here before reaching any handler"). For "explanation", use precise technical language for working engineers while still explaining project-specific patterns.
 
 You MUST return a JSON object with EXACTLY these fields:
 {
@@ -59,12 +58,11 @@ You MUST return a JSON object with EXACTLY these fields:
     {
       "id": "short_key",
       "name": "Human Readable Name",
-      "emoji": "single emoji",
       "color": "teal|purple|coral|blue|amber|pink|green|gray",
       "metaphor": "real-world analogy",
       "one_liner": "10 words max",
       "explanation": "2-3 sentences, plain English",
-      "deep_explanation": "2-3 paragraphs, more technical",
+      "deep_explanation": "1 sentence, technical summary for advanced users",
       "file_ids": ["array of file paths"],
       "importance": "critical|important|supporting"
     }
@@ -82,10 +80,11 @@ File paths: ${allPaths.join(', ')}
 File analyses:
 ${analysisText}
 
-Create a concept map with 3-20 concepts (scale with complexity). Every file must belong to exactly one concept. Use the exact JSON field names shown in the system prompt.`,
+Create a concept map with 3-10 concepts (scale with complexity). Every file must belong to exactly one concept. Use the exact JSON field names shown in the system prompt.`,
     schema: conceptSynthesisSchema,
     schemaName: 'concept_synthesis',
-    maxTokens: Math.min(16000, Math.max(8000, fileAnalyses.length * 200)),
+    maxTokens: Math.min(8192, Math.max(4096, fileAnalyses.length * 200)),
+    model: 'fast',
   });
 
   console.log(`Concept synthesis raw response keys: ${Object.keys(raw)}, concepts: ${raw.concepts?.length}, edges: ${raw.edges?.length}`);
@@ -94,7 +93,6 @@ Create a concept map with 3-20 concepts (scale with complexity). Every file must
   const normalizeConcept = (c: any) => ({
     id: c.id || c.key || 'unknown',
     name: c.name || c.label || c.title || c.id || 'Unnamed',
-    emoji: c.emoji || c.icon || '📦',
     color: c.color || 'gray',
     metaphor: c.metaphor || c.analogy || '',
     one_liner: c.one_liner || c.oneLiner || c.summary || '',
@@ -124,7 +122,6 @@ Create a concept map with 3-20 concepts (scale with complexity). Every file must
     project_id: projectId,
     concept_key: concept.id,
     name: concept.name,
-    emoji: concept.emoji,
     color: concept.color,
     metaphor: concept.metaphor,
     one_liner: concept.one_liner,

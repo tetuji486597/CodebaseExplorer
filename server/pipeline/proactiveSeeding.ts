@@ -5,6 +5,23 @@ import { proactiveSeedingSchema } from '../ai/schemas.js';
 import type { ConceptSynthesisResult } from './conceptSynthesis.js';
 
 export async function runProactiveSeeding(projectId: string, synthesis: ConceptSynthesisResult) {
+  // For tiny projects, just sort by importance — no need for an AI call
+  if (synthesis.concepts.length <= 3) {
+    const basicPath = synthesis.concepts
+      .sort((a, b) => {
+        const order = { critical: 0, important: 1, supporting: 2 };
+        return (order[a.importance as keyof typeof order] || 2) - (order[b.importance as keyof typeof order] || 2);
+      })
+      .map((c) => c.id);
+
+    await supabase.from('user_state').insert({
+      project_id: projectId,
+      exploration_path: basicPath,
+    });
+    console.log(`Small project — seeded exploration path by importance: ${basicPath.join(' → ')}`);
+    return;
+  }
+
   const conceptSummary = synthesis.concepts
     .map((c) => `${c.id}: ${c.name} (${c.importance}) - ${c.one_liner}`)
     .join('\n');

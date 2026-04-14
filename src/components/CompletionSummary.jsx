@@ -77,13 +77,13 @@ export default function CompletionSummary() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(10, 10, 20, 0.85)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'var(--color-bg-elevated)', backdropFilter: 'blur(8px)' }}
     >
       <div
         className="w-full max-w-md mx-4 rounded-2xl p-7"
         style={{
-          background: '#14142b',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'var(--color-bg-elevated)',
+          border: '1px solid var(--color-border-visible)',
           boxShadow: '0 8px 48px rgba(0,0,0,0.5)',
           animation: 'fade-in 0.4s ease-out',
         }}
@@ -94,13 +94,13 @@ export default function CompletionSummary() {
             className="w-10 h-10 rounded-xl flex items-center justify-center"
             style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.2)' }}
           >
-            <CheckCircle2 size={20} style={{ color: '#10b981' }} />
+            <CheckCircle2 size={20} style={{ color: 'var(--color-success)' }} />
           </div>
           <div>
-            <h2 className="text-base font-semibold font-heading" style={{ color: '#e2e8f0' }}>
+            <h2 className="text-base font-semibold font-heading" style={{ color: 'var(--color-text-primary)' }}>
               Nice work exploring
             </h2>
-            <p className="text-xs" style={{ color: '#64748b' }}>
+            <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {summary.codebaseName}
             </p>
           </div>
@@ -109,7 +109,7 @@ export default function CompletionSummary() {
         {/* New concepts */}
         {summary.newConcepts.length > 0 && (
           <div className="mb-5">
-            <p className="text-xs font-medium mb-2.5" style={{ color: '#94a3b8' }}>
+            <p className="text-xs font-medium mb-2.5" style={{ color: 'var(--color-text-secondary)' }}>
               Concepts you encountered:
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -119,7 +119,7 @@ export default function CompletionSummary() {
                   className="text-[11px] px-2.5 py-1 rounded-lg font-medium"
                   style={{
                     background: 'rgba(16, 185, 129, 0.1)',
-                    color: '#6ee7b7',
+                    color: 'var(--color-success)',
                     border: '1px solid rgba(16, 185, 129, 0.2)',
                   }}
                 >
@@ -134,18 +134,18 @@ export default function CompletionSummary() {
         {nextCodebase && (
           <div
             className="rounded-xl p-4 mb-5"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ background: 'var(--color-bg-sunken)', border: '1px solid var(--color-border-subtle)' }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <Sparkles size={13} style={{ color: '#f59e0b' }} />
-              <span className="text-[11px] font-medium" style={{ color: '#f59e0b' }}>
+              <Sparkles size={13} style={{ color: 'var(--color-warning)' }} />
+              <span className="text-[11px] font-medium" style={{ color: 'var(--color-warning)' }}>
                 Recommended next
               </span>
             </div>
-            <p className="text-[13px] font-medium mb-1" style={{ color: '#e2e8f0' }}>
+            <p className="text-[13px] font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
               {nextCodebase.name}
             </p>
-            <p className="text-[11px] leading-relaxed" style={{ color: '#64748b' }}>
+            <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-text-tertiary)' }}>
               {nextCodebase.description}
             </p>
           </div>
@@ -160,9 +160,9 @@ export default function CompletionSummary() {
             }}
             className="w-full py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5"
             style={{
-              background: 'rgba(99, 102, 241, 0.15)',
-              color: '#a5b4fc',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
+              background: 'var(--color-accent-soft)',
+              color: 'var(--color-accent-active)',
+              border: '1px solid var(--color-border-strong)',
             }}
           >
             <Compass size={14} />
@@ -176,9 +176,9 @@ export default function CompletionSummary() {
               }}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 active:scale-[0.98]"
               style={{
-                background: 'rgba(255,255,255,0.04)',
-                color: '#94a3b8',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'var(--color-bg-sunken)',
+                color: 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border-subtle)',
               }}
             >
               Back to library
@@ -190,9 +190,9 @@ export default function CompletionSummary() {
               }}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5"
               style={{
-                background: 'rgba(255,255,255,0.04)',
-                color: '#94a3b8',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'var(--color-bg-sunken)',
+                color: 'var(--color-text-secondary)',
+                border: '1px solid var(--color-border-subtle)',
               }}
             >
               View progress <ArrowRight size={13} />

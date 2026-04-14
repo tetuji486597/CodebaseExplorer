@@ -22,8 +22,8 @@ export async function runFileAnalysis(
   const allFiles = Object.entries(fileContents);
   const allAnalyses: FileAnalysis[] = [];
 
-  // Large batches (15 files each) with truncated content to minimize API calls
-  const batchSize = 15;
+  // Large batches — send all files in one call when possible
+  const batchSize = 30;
   const batches: Array<[string, string][]> = [];
 
   for (let i = 0; i < allFiles.length; i += batchSize) {
@@ -46,7 +46,7 @@ export async function runFileAnalysis(
         prompt: `Analyze these ${batch.length} files. Return a JSON "files" array with one entry per file.\n\n${fileDescriptions}`,
         schema: fileAnalysisSchema,
         schemaName: 'file_analysis',
-        maxTokens: 4096,
+        maxTokens: Math.min(8192, Math.max(4096, batch.length * 200)),
         model: 'fast',
       });
 
@@ -69,8 +69,7 @@ export async function runFileAnalysis(
 
     // Small delay between batches to avoid burst rate limits
     if (i < batches.length - 1) {
-      console.log('Short delay between batches...');
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
 

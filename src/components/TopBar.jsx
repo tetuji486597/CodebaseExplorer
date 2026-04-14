@@ -1,168 +1,285 @@
 import { useNavigate } from 'react-router';
+import posthog from '../lib/posthog';
 import useStore from '../store/useStore';
-import { Compass, FolderTree, Route, Sparkles } from 'lucide-react';
+import { Compass, FolderTree, Route, User, Sun, Moon, Home, FolderOpen } from 'lucide-react';
 
 export default function TopBar() {
-  const { viewMode, setViewMode, concepts, exploredConcepts, guidedMode, explorationPath, enterGuidedMode } = useStore();
+  const viewMode = useStore(s => s.viewMode);
+  const setViewMode = useStore(s => s.setViewMode);
+  const concepts = useStore(s => s.concepts);
+  const exploredConcepts = useStore(s => s.exploredConcepts);
+  const guidedMode = useStore(s => s.guidedMode);
+  const explorationPath = useStore(s => s.explorationPath);
+  const enterGuidedMode = useStore(s => s.enterGuidedMode);
+  const projectMeta = useStore(s => s.projectMeta);
+  const darkMode = useStore(s => s.darkMode);
+  const toggleDarkMode = useStore(s => s.toggleDarkMode);
+  const user = useStore(s => s.user);
+
   const navigate = useNavigate();
   const exploredCount = exploredConcepts.size;
   const totalCount = concepts.length;
 
   return (
-    <div
-      className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-5 py-3"
+    <header
+      className="eg-top"
       style={{
-        background: 'rgba(10, 10, 26, 0.88)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 clamp(0.75rem, 2vw, 1.25rem)',
+        background: 'var(--color-bg-elevated)',
+        borderBottom: '1px solid var(--color-border-subtle)',
+        gap: '0.75rem',
+        minWidth: 0,
       }}
     >
-      {/* Left: Title + Progress */}
-      <div className="flex items-center gap-3">
-        <span className="font-heading text-sm font-semibold tracking-tight" style={{ color: '#e2e8f0' }}>
-          Codebase Explorer
-        </span>
-        {totalCount > 0 && (
-          <div className="flex items-center gap-2">
-            <span
-              className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-              style={{
-                background: 'rgba(99, 102, 241, 0.15)',
-                color: '#a5b4fc',
-                border: '1px solid rgba(99, 102, 241, 0.2)',
-              }}
-            >
-              {totalCount} concepts
-            </span>
-            {exploredCount > 0 && (
-              <span
-                className="text-[11px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1.5"
-                style={{
-                  background: 'rgba(16, 185, 129, 0.12)',
-                  color: '#6ee7b7',
-                  border: '1px solid rgba(16, 185, 129, 0.2)',
-                }}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 5L4.5 7.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                {exploredCount}/{totalCount} explored
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Center: Segmented Control (hidden in guided mode) */}
-      {!guidedMode ? (
-        <div
-          className="flex rounded-xl overflow-hidden relative"
+      {/* Left: Home button + project name + stats */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+        <button
+          onClick={() => navigate('/upload')}
+          aria-label="Home"
           style={{
-            background: '#14142b',
-            border: '1px solid rgba(255,255,255,0.06)',
-            padding: '3px',
+            width: 32,
+            height: 32,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: '1px solid transparent',
+            color: 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            transition: `all var(--duration-base) var(--ease-out)`,
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--color-accent-soft)';
+            e.currentTarget.style.color = 'var(--color-accent-active)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
         >
-          {/* Sliding highlight */}
-          <div
-            className="absolute top-[3px] rounded-lg transition-all duration-200 ease-out"
+          <Home size={15} strokeWidth={1.75} />
+        </button>
+
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.2 }}>
+          <span
             style={{
-              width: 'calc(50% - 3px)',
-              height: 'calc(100% - 6px)',
-              left: viewMode === 'concepts' ? '3px' : 'calc(50%)',
-              background: 'rgba(99, 102, 241, 0.15)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--color-text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '32vw',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {projectMeta?.name || 'Codebase Explorer'}
+          </span>
+          {totalCount > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              {totalCount} concepts{exploredCount > 0 ? ` · ${exploredCount} explored` : ''}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Center: Segmented control (concepts/files) */}
+      {!guidedMode && totalCount > 0 && (
+        <div
+          className="hide-on-mobile"
+          style={{
+            position: 'relative',
+            display: 'inline-flex',
+            padding: 3,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-sunken)',
+            border: '1px solid var(--color-border-subtle)',
+            flexShrink: 0,
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: 3,
+              bottom: 3,
+              left: viewMode === 'concepts' ? 3 : 'calc(50% + 1px)',
+              width: 'calc(50% - 4px)',
+              background: 'var(--color-bg-elevated)',
+              borderRadius: 'var(--radius-sm)',
+              boxShadow: 'var(--shadow-xs)',
+              transition: `left var(--duration-base) var(--ease-out)`,
             }}
           />
           <button
-            onClick={() => setViewMode('concepts')}
-            className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
+            onClick={() => { setViewMode('concepts'); posthog.capture('view_mode_switched', { mode: 'concepts' }); }}
             style={{
-              color: viewMode === 'concepts' ? '#a5b4fc' : '#64748b',
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 500,
+              color: viewMode === 'concepts' ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              transition: `color var(--duration-base) var(--ease-out)`,
             }}
           >
-            <Compass size={13} />
+            <Compass size={13} strokeWidth={1.75} />
             Concepts
           </button>
           <button
-            onClick={() => setViewMode('files')}
-            className="relative z-10 flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium transition-colors duration-200"
+            onClick={() => { setViewMode('files'); posthog.capture('view_mode_switched', { mode: 'files' }); }}
             style={{
-              color: viewMode === 'files' ? '#a5b4fc' : '#64748b',
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 500,
+              color: viewMode === 'files' ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              transition: `color var(--duration-base) var(--ease-out)`,
             }}
           >
-            <FolderTree size={13} />
+            <FolderTree size={13} strokeWidth={1.75} />
             Files
           </button>
         </div>
-      ) : (
-        <div />
       )}
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+        {user && (
+          <button
+            onClick={() => navigate('/projects')}
+            aria-label="My projects"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: '1px solid transparent',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              transition: `all var(--duration-base) var(--ease-out)`,
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--color-accent-soft)';
+              e.currentTarget.style.color = 'var(--color-accent-active)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = 'var(--color-text-secondary)';
+            }}
+          >
+            <FolderOpen size={15} strokeWidth={1.75} />
+          </button>
+        )}
         {!guidedMode && explorationPath.length > 0 && (
           <button
             onClick={enterGuidedMode}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
             style={{
-              color: '#a5b4fc',
-              background: 'rgba(99, 102, 241, 0.1)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--color-text-inverse)',
+              background: 'var(--color-accent)',
+              border: '1px solid var(--color-accent)',
+              cursor: 'pointer',
+              transition: `all var(--duration-base) var(--ease-out)`,
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
-            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-accent-hover)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-accent)'; }}
           >
-            <Route size={13} />
-            Resume Tour
+            <Route size={13} strokeWidth={1.75} />
+            <span className="hide-on-mobile">Resume tour</span>
           </button>
         )}
+
+        <button
+          onClick={toggleDarkMode}
+          aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: '1px solid transparent',
+            color: 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            transition: `all var(--duration-base) var(--ease-out)`,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--color-accent-soft)';
+            e.currentTarget.style.color = 'var(--color-accent-active)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
+          }}
+        >
+          {darkMode ? <Sun size={15} strokeWidth={1.75} /> : <Moon size={15} strokeWidth={1.75} />}
+        </button>
+
         <button
           onClick={() => navigate('/profile')}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
+          aria-label="Comprehension profile"
           style={{
-            color: '#94a3b8',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--color-text-secondary)',
+            background: 'transparent',
+            border: '1px solid var(--color-border-subtle)',
+            cursor: 'pointer',
+            transition: `all var(--duration-base) var(--ease-out)`,
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-            e.currentTarget.style.color = '#e2e8f0';
+            e.currentTarget.style.background = 'var(--color-bg-sunken)';
+            e.currentTarget.style.color = 'var(--color-text-primary)';
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-            e.currentTarget.style.color = '#94a3b8';
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
         >
-          <Sparkles size={12} />
-          Skills
-        </button>
-        <button
-          onClick={() => navigate('/')}
-          className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-95"
-          style={{
-            color: '#94a3b8',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-            e.currentTarget.style.color = '#e2e8f0';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-            e.currentTarget.style.color = '#94a3b8';
-          }}
-        >
-          New
+          <User size={13} strokeWidth={1.75} />
+          <span className="hide-on-mobile">Profile</span>
         </button>
       </div>
-    </div>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .hide-on-mobile { display: none !important; }
+        }
+      `}</style>
+    </header>
   );
 }

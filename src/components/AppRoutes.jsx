@@ -1,15 +1,19 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router';
+import { usePostHog } from '@posthog/react';
 import useStore from '../store/useStore';
 import { supabase } from '../lib/supabase';
 import LandingPage from './LandingPage';
-import EntryScreen from './EntryScreen';
+
 import UploadScreen from './UploadScreen';
 import ProcessingScreen from './ProcessingScreen';
+import BigPictureScreen from './BigPictureScreen';
 import ExplorerView from './ExplorerView';
 import CuratedLibrary from './CuratedLibrary';
-import SkillProfile from './SkillProfile';
+import AppPreviewScreen from './AppPreviewScreen';
+import ComprehensionProfile from './ComprehensionProfile';
 import RepoSelectScreen from './RepoSelectScreen';
+import MyProjects from './MyProjects';
 
 export default function AppRoutes() {
   const navigate = useNavigate();
@@ -17,6 +21,16 @@ export default function AppRoutes() {
   const setUser = useStore(state => state.setUser);
   const setSession = useStore(state => state.setSession);
   const setAuthLoading = useStore(state => state.setAuthLoading);
+  const darkMode = useStore(state => state.darkMode);
+  const posthog = usePostHog();
+
+  // Sync darkMode to <html data-theme>
+  useEffect(() => {
+    const el = document.documentElement;
+    el.dataset.theme = darkMode ? 'dark' : 'light';
+    // Remove legacy 'dark' class from tailwind dark selector
+    el.classList.toggle('dark', darkMode);
+  }, [darkMode]);
 
   // Initialize auth session
   useEffect(() => {
@@ -25,8 +39,8 @@ export default function AppRoutes() {
       setUser(session?.user ?? null);
       setAuthLoading(false);
 
-      if (session?.provider_token && location.pathname === '/') {
-        navigate('/repos', { replace: true });
+      if (session?.user) {
+        posthog.identify(session.user.id, { email: session.user.email });
       }
     });
 
@@ -34,8 +48,13 @@ export default function AppRoutes() {
       setSession(session);
       setUser(session?.user ?? null);
 
-      if (session?.provider_token && location.pathname === '/') {
-        navigate('/repos', { replace: true });
+      if (_event === 'SIGNED_IN' && session?.user) {
+        posthog.identify(session.user.id, { email: session.user.email });
+        posthog.capture('user_signed_in');
+      }
+      if (_event === 'SIGNED_OUT') {
+        posthog.capture('user_signed_out');
+        posthog.reset();
       }
     });
 
@@ -44,7 +63,7 @@ export default function AppRoutes() {
 
   // Scrollable pages vs fixed-viewport
   useEffect(() => {
-    const scrollableRoutes = ['/', '/landing', '/library', '/profile'];
+    const scrollableRoutes = ['/', '/upload', '/library', '/profile', '/overview', '/projects'];
     if (scrollableRoutes.includes(location.pathname)) {
       document.body.classList.remove('no-scroll');
     } else {
@@ -54,16 +73,18 @@ export default function AppRoutes() {
   }, [location.pathname]);
 
   return (
-    <div className="w-full h-full" style={{ background: '#0a0a1a', color: '#e2e8f0' }}>
+    <div className="w-full h-full" style={{ background: 'var(--color-bg-base)', color: 'var(--color-text-primary)' }}>
       <Routes>
-        <Route path="/" element={<EntryScreen />} />
-        <Route path="/landing" element={<LandingPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/upload" element={<UploadScreen />} />
         <Route path="/processing" element={<ProcessingScreen />} />
+        <Route path="/overview" element={<BigPictureScreen />} />
         <Route path="/explorer" element={<ExplorerView />} />
         <Route path="/library" element={<CuratedLibrary />} />
-        <Route path="/profile" element={<SkillProfile />} />
+        <Route path="/library/:id/preview" element={<AppPreviewScreen />} />
+        <Route path="/profile" element={<ComprehensionProfile />} />
         <Route path="/repos" element={<RepoSelectScreen />} />
+        <Route path="/projects" element={<MyProjects />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

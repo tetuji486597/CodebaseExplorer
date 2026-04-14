@@ -4,8 +4,9 @@ import { runConceptSynthesis } from './conceptSynthesis.js';
 import { runDepthMapping } from './depthMapping.js';
 import { runInsightGeneration } from './insightGeneration.js';
 import { runEmbedding } from './embedding.js';
-import { runProactiveSeeding } from './proactiveSeeding.js';
+// proactiveSeeding replaced with deterministic inline sort
 import { runConceptMapping } from './conceptMapping.js';
+import { runQuizGeneration } from './quizGeneration.js';
 
 export interface PipelineInput {
   fileTree: any;
@@ -25,6 +26,7 @@ async function updateProgress(projectId: string, stage: number, message: string,
 
 export async function runPipeline(projectId: string, input: PipelineInput) {
   try {
+    const pipelineStart = Date.now();
     await updateProgress(projectId, 0, 'Starting pipeline...', 'processing');
 
     // Stage 1: File classification (happens client-side, we just store files)
@@ -39,6 +41,17 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
       .from('projects')
       .update({ framework, language, file_count: fileEntries.length })
       .eq('id', projectId);
+
+    // Early exit: no files to process (empty zip)
+    if (fileEntries.length === 0) {
+      console.log(`Empty project ${projectId} — skipping pipeline`);
+      await supabase.from('user_state').insert({
+        project_id: projectId,
+        exploration_path: [],
+      });
+      await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
+      return;
+    }
 
     // Store files
     const fileRows = fileEntries.map(([path, content]) => ({
@@ -59,38 +72,68 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
     const analysisContents = filterForAnalysis(input.fileContents);
     console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
 
+    // Early exit: files exist but none are worth analyzing (e.g., only config/lock files)
+    if (Object.keys(analysisContents).length === 0) {
+      console.log(`No analyzable files in project ${projectId} — skipping AI stages`);
+      await supabase.from('user_state').insert({
+        project_id: projectId,
+        exploration_path: [],
+      });
+      await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
+      return;
+    }
+
     // Stage 2: Parallel file analysis
     await updateProgress(projectId, 2, 'Analyzing file structure and dependencies...');
+    let stageStart = Date.now();
     const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
+    console.log(`[timing] Stage 2 (file analysis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
 
     // Stage 3: Concept synthesis
     await updateProgress(projectId, 3, 'Identifying architectural concepts...');
+    stageStart = Date.now();
     const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
+    console.log(`[timing] Stage 3 (concept synthesis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
 
-    // Stage 4: Depth mapping (runs first to avoid rate limit contention)
-    await updateProgress(projectId, 4, 'Generating multi-level explanations...');
-    await runDepthMapping(projectId, synthesis, fileAnalyses);
+    // Generate exploration path deterministically (no API call needed)
+    const explorationPath = synthesis.concepts
+      .sort((a, b) => {
+        const order: Record<string, number> = { critical: 0, important: 1, supporting: 2 };
+        return (order[a.importance] ?? 2) - (order[b.importance] ?? 2);
+      })
+      .map((c) => c.id);
 
-    // Stage 5: Insight generation (sequential to avoid rate limits)
-    await updateProgress(projectId, 5, 'Generating architecture insights...');
-    await runInsightGeneration(projectId, synthesis, fileAnalyses);
+    // Use suggested starting concept if available
+    if (synthesis.suggested_starting_concept && explorationPath.includes(synthesis.suggested_starting_concept)) {
+      const idx = explorationPath.indexOf(synthesis.suggested_starting_concept);
+      explorationPath.splice(idx, 1);
+      explorationPath.unshift(synthesis.suggested_starting_concept);
+    }
 
-    // Stage 6: Proactive seeding (moved before embedding so UI loads sooner)
-    await updateProgress(projectId, 6, 'Building your learning path...');
-    await runProactiveSeeding(projectId, synthesis);
-
-    // Stage 6.5: Map concepts to universal taxonomy (fast, non-blocking)
-    await runConceptMapping(projectId).catch((err) => {
-      console.error(`Concept mapping failed for project ${projectId}:`, err);
+    await supabase.from('user_state').insert({
+      project_id: projectId,
+      exploration_path: explorationPath,
     });
 
     // Mark pipeline complete — UI can load now
     await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
+    console.log(`[timing] Pipeline total: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`);
     console.log(`Pipeline complete for project ${projectId}`);
 
-    // Stage 7: Embedding & indexing (runs in background, not blocking UI)
-    runEmbedding(projectId, input.fileContents, fileAnalyses, synthesis).catch((err) => {
-      console.error(`Background embedding failed for project ${projectId}:`, err);
+    // Background enrichment: depth mapping, insights, quiz, embedding, concept mapping
+    // These run after "complete" so the UI loads immediately
+    const enrichmentStart = Date.now();
+    Promise.all([
+      runDepthMapping(projectId, synthesis, fileAnalyses),
+      runInsightGeneration(projectId, synthesis, fileAnalyses),
+      runQuizGeneration(projectId, synthesis, fileAnalyses),
+      runConceptMapping(projectId),
+      runEmbedding(projectId, input.fileContents, fileAnalyses, synthesis),
+    ]).then(() => {
+      console.log(`[timing] Background enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
+      return updateProgress(projectId, 7, 'Enrichment complete', 'enriched');
+    }).catch((err) => {
+      console.error(`Background enrichment failed for project ${projectId}:`, err);
     });
   } catch (err) {
     console.error(`Pipeline failed for project ${projectId}:`, err);

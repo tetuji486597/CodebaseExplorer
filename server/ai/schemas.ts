@@ -46,7 +46,6 @@ export const conceptSynthesisSchema = {
         properties: {
           id: { type: 'string' },
           name: { type: 'string' },
-          emoji: { type: 'string' },
           color: { type: 'string', enum: ['teal', 'purple', 'coral', 'blue', 'amber', 'pink', 'green', 'gray'] },
           metaphor: { type: 'string' },
           one_liner: { type: 'string' },
@@ -55,7 +54,7 @@ export const conceptSynthesisSchema = {
           file_ids: { type: 'array', items: { type: 'string' } },
           importance: { type: 'string', enum: ['critical', 'important', 'supporting'] },
         },
-        required: ['id', 'name', 'emoji', 'color', 'metaphor', 'one_liner', 'explanation', 'deep_explanation', 'file_ids', 'importance'],
+        required: ['id', 'name', 'color', 'metaphor', 'one_liner', 'explanation', 'deep_explanation', 'file_ids', 'importance'],
       },
     },
     edges: {
@@ -153,6 +152,31 @@ export const proactiveActionSchema = {
     priority: { type: 'string', enum: ['low', 'medium', 'high'] },
   },
   required: ['action', 'reason', 'priority'],
+};
+
+export const quizGenerationSchema = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          concept_id: { type: 'string' },
+          question_type: { type: 'string', enum: ['multiple_choice', 'matching', 'ordering', 'fill_blank'] },
+          difficulty: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+          question_text: { type: 'string' },
+          code_snippet: { type: 'string' },
+          options: { type: 'object' },
+          correct_answer: { type: 'object' },
+          explanation: { type: 'string' },
+          related_file_paths: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['concept_id', 'question_type', 'difficulty', 'question_text', 'options', 'correct_answer', 'explanation'],
+      },
+    },
+  },
+  required: ['questions'],
 };
 
 export const proactiveSeedingSchema = {

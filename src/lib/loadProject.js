@@ -1,6 +1,38 @@
 import useStore from '../store/useStore';
 import { API_BASE } from './api';
 
+function loadQuizStats(quizState) {
+  if (!quizState?.length) return;
+  const store = useStore.getState();
+  const stats = {};
+  quizState.forEach(qs => {
+    stats[qs.concept_key] = {
+      streak: qs.streak,
+      mastered: qs.streak >= 3,
+      totalAttempts: qs.total_attempts,
+      totalCorrect: qs.total_correct,
+    };
+  });
+  store.setQuizStats(stats);
+}
+
+async function initQuizState(projectId, explorationPath, currentPosition) {
+  if (!projectId || !explorationPath?.length) return;
+  try {
+    const body = { explorationPath };
+    if (typeof currentPosition === 'number') {
+      body.currentPosition = currentPosition;
+    }
+    await fetch(`${API_BASE}/api/quiz/${projectId}/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    console.error('Failed to init quiz state:', err);
+  }
+}
+
 /**
  * Fetch project data from the API, transform it into store format, and load it.
  * Returns the transformed concepts array (for callers that need it), or null on failure.
@@ -24,10 +56,12 @@ export async function fetchAndLoadProject(projectId) {
 export function loadProjectData(data, projectId) {
   const store = useStore.getState();
 
+  // Clean slate before loading — prevents stale state from a previous project
+  store.resetProject();
+
   const concepts = (data.concepts || []).map(c => ({
     id: c.concept_key,
     name: c.name,
-    emoji: c.emoji,
     color: c.color,
     description: c.explanation,
     metaphor: c.metaphor,
@@ -77,11 +111,22 @@ export function loadProjectData(data, projectId) {
         store.setGuidedPosition(0);
         store.setSelectedNode({ type: 'concept', id: validPath[0] });
         store.dismissOnboarding();
+
+        // Initialize quiz state for the exploration path (fire-and-forget)
+        initQuizState(projectId, validPath);
       }
     }
   }
 
+  // Load quiz stats if available
+  if (data.quizState) {
+    loadQuizStats(data.quizState);
+  }
+
   store.setProjectId(projectId);
+  if (data.project) {
+    store.setProjectMeta(data.project);
+  }
   store.loadData({ concepts, files, conceptEdges, fileImports: [] });
 
   // Persist so ExplorerView can restore on refresh

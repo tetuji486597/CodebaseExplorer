@@ -1,24 +1,73 @@
 import { motion } from 'framer-motion';
+import { Network, Compass, MessageSquare, ShieldAlert, Zap, Lock } from 'lucide-react';
 import AnimatedSection, { staggerContainer, fadeUp } from './AnimatedSection';
 
 const features = [
-  { emoji: '🗺️', title: 'Architecture Map', desc: 'AI identifies architectural layers — API routes, state management, data models, services — and maps them as interactive nodes with real dependency relationships.', span: true, color: '#06b6d4' },
-  { emoji: '📂', title: 'Files View', desc: 'Toggle to see every file grouped by architectural role. Trace imports and see which modules depend on which.', color: '#8b5cf6' },
-  { emoji: '💬', title: 'Ask Claude Anything', desc: 'Chat bar at the bottom. Ask about design patterns, data flow, or why a class is structured a certain way — using the CS terms you already know.', color: '#60a5fa' },
-  { emoji: '🔍', title: 'Code Walkthrough', desc: "Click 'Walk me through this file' for a split-screen with syntax highlighting and explanations that connect to concepts like inheritance, middleware, and pub/sub.", color: '#f59e0b' },
-  { emoji: '⚡', title: 'Any Stack, Zero Config', desc: "Drop a .zip — React, Django, Spring Boot, Express, or anything else. No CLI. No setup.", color: '#10b981' },
-  { emoji: '🔐', title: 'Private & Secure', desc: 'Your code never leaves your browser unless you choose to analyze it with AI.', color: '#ec4899' },
+  {
+    Icon: Network,
+    title: 'Architecture map',
+    desc: 'See every service, module, and data store as an interactive graph with real dependency relationships — not a static diagram.',
+    span: true,
+  },
+  {
+    Icon: Compass,
+    title: 'Guided walkthroughs',
+    desc: 'AI narrates the codebase in order of importance so you grasp the system before you touch a line.',
+  },
+  {
+    Icon: MessageSquare,
+    title: 'Chat with the code',
+    desc: 'Ask about patterns, trade-offs, or risky areas. Answers cite specific files.',
+  },
+  {
+    Icon: ShieldAlert,
+    title: 'Risk & pattern detection',
+    desc: 'Surface tight coupling, stale code, and design debt — useful for due diligence and legacy audits.',
+  },
+  {
+    Icon: Zap,
+    title: 'Any stack, zero config',
+    desc: 'TypeScript, Go, Python, Rust, Java, C#. Drop a zip or paste a URL — no CLI, no setup.',
+  },
+  {
+    Icon: Lock,
+    title: 'Private & in-your-control',
+    desc: 'Self-host for proprietary code or run against any public repo anonymously.',
+  },
 ];
 
 export default function FeaturesSection() {
   return (
-    <AnimatedSection id="lp-features" style={{ padding: '6rem 2rem', maxWidth: 1280, margin: '0 auto' }}>
-      <h2 style={{
-        fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontWeight: 700,
-        textAlign: 'center', marginBottom: '3rem', color: '#f8fafc',
-      }}>
-        See how real projects are architected
+    <AnimatedSection
+      id="lp-features"
+      style={{ padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)', maxWidth: 1180, margin: '0 auto' }}
+    >
+      <h2
+        className="serif"
+        style={{
+          fontSize: 'clamp(1.75rem, 5vw, 2.5rem)',
+          fontWeight: 500,
+          textAlign: 'center',
+          marginBottom: '0.75rem',
+          color: 'var(--color-text-primary)',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        Built for the work, not the classroom
       </h2>
+      <p
+        style={{
+          textAlign: 'center',
+          color: 'var(--color-text-secondary)',
+          maxWidth: 560,
+          margin: '0 auto 3rem',
+          fontSize: '1rem',
+          lineHeight: 1.6,
+        }}
+      >
+        Everything you need to feel at home in a codebase you&apos;ve never seen before.
+      </p>
+
       <motion.div
         className="lp-bento"
         variants={staggerContainer}
@@ -26,34 +75,60 @@ export default function FeaturesSection() {
         whileInView="show"
         viewport={{ once: true, margin: '-50px' }}
         style={{
-          display: 'grid', gridTemplateColumns: 'repeat(2,1fr)',
-          gap: '1.25rem', maxWidth: 900, margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '1rem',
         }}
       >
-        {features.map((f, i) => (
+        {features.map(({ Icon, title, desc, span }, i) => (
           <motion.div
             key={i}
             variants={fadeUp}
-            whileHover={{
-              y: -4,
-              borderColor: f.color + '50',
-              boxShadow: `0 8px 30px rgba(0,0,0,.3), 0 0 20px ${f.color}15`,
-            }}
+            whileHover={{ y: -2 }}
             transition={{ duration: 0.2 }}
             style={{
-              background: 'rgba(20,20,24,.6)', borderRadius: 14, padding: '2rem',
-              border: '1px solid rgba(255,255,255,.06)',
-              gridColumn: f.span ? '1 / -1' : undefined,
-              cursor: 'default',
+              background: 'var(--color-bg-elevated)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'clamp(1.25rem, 3vw, 2rem)',
+              border: '1px solid var(--color-border-subtle)',
+              boxShadow: 'var(--shadow-sm)',
+              gridColumn: span ? '1 / -1' : undefined,
             }}
           >
-            <div style={{ fontSize: '1.8rem', marginBottom: '.75rem' }}>{f.emoji}</div>
-            <h3 style={{ fontWeight: 600, marginBottom: '.5rem', fontSize: '1.05rem', color: '#f8fafc' }}>{f.title}</h3>
-            <p style={{ color: '#94a3b8', fontSize: '.9rem', lineHeight: 1.6 }}>{f.desc}</p>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-accent-soft)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '1rem',
+              }}
+            >
+              <Icon size={20} strokeWidth={1.5} color="var(--color-accent)" />
+            </div>
+            <h3
+              style={{
+                fontWeight: 600,
+                marginBottom: '0.5rem',
+                fontSize: '1.05rem',
+                color: 'var(--color-text-primary)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {title}
+            </h3>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '.92rem', lineHeight: 1.6 }}>{desc}</p>
           </motion.div>
         ))}
       </motion.div>
-      <style>{`@media(max-width:900px){.lp-bento{grid-template-columns:1fr!important}}`}</style>
+
+      <style>{`
+        @media (max-width: 900px) { .lp-bento { grid-template-columns: repeat(2, 1fr) !important; } }
+        @media (max-width: 560px) { .lp-bento { grid-template-columns: 1fr !important; } }
+      `}</style>
     </AnimatedSection>
   );
 }

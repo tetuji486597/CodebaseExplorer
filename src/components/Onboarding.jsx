@@ -7,19 +7,19 @@ const STEPS = [
     title: 'This is the architecture map',
     description: 'Each bubble represents an architectural concept — think controllers, models, services, or UI components. Colors group related modules. Bigger bubbles mean more files are involved.',
     Icon: Map,
-    color: '#6366f1',
+    color: 'var(--color-accent)',
   },
   {
     title: 'Click any concept',
     description: 'Select a concept to see what it does, which files implement it, what design patterns are at play, and how it connects to the rest of the system.',
     Icon: MousePointerClick,
-    color: '#10b981',
+    color: 'var(--color-success)',
   },
   {
     title: 'Ask anything',
     description: "Use the chat bar to ask questions — 'What pattern does the auth module use?', 'How does data flow from the API to the UI?', or anything else about the codebase.",
     Icon: MessageSquare,
-    color: '#8b5cf6',
+    color: 'var(--color-accent)',
   },
 ];
 
@@ -43,13 +43,13 @@ export default function Onboarding() {
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center"
-      style={{ background: 'rgba(10, 10, 26, 0.88)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'var(--color-bg-elevated)', backdropFilter: 'blur(8px)' }}
     >
       <div
         className="w-full max-w-sm mx-4 rounded-2xl p-8 text-center"
         style={{
-          background: '#14142b',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'var(--color-bg-elevated)',
+          border: '1px solid var(--color-border-visible)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           animation: 'fade-in 0.3s ease-out',
         }}
@@ -62,7 +62,7 @@ export default function Onboarding() {
               className="h-1 rounded-full transition-all duration-300"
               style={{
                 width: i === onboardingStep ? 20 : 8,
-                background: i === onboardingStep ? '#6366f1' : 'rgba(255,255,255,0.08)',
+                background: i === onboardingStep ? 'var(--color-accent)' : 'var(--color-border-visible)',
               }}
             />
           ))}
@@ -78,16 +78,16 @@ export default function Onboarding() {
           <step.Icon size={28} style={{ color: step.color }} />
         </div>
 
-        <h2 className="text-lg font-semibold mb-2 font-heading" style={{ color: '#e2e8f0' }}>{step.title}</h2>
-        <p className="text-sm leading-relaxed mb-8" style={{ color: '#94a3b8' }}>{step.description}</p>
+        <h2 className="text-lg font-semibold mb-2 font-heading" style={{ color: 'var(--color-text-primary)' }}>{step.title}</h2>
+        <p className="text-sm leading-relaxed mb-8" style={{ color: 'var(--color-text-secondary)' }}>{step.description}</p>
 
         <div className="flex gap-2 justify-center">
           <button
             onClick={dismissOnboarding}
             className="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
-            style={{ color: '#64748b' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#94a3b8'}
-            onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+            style={{ color: 'var(--color-text-tertiary)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
           >
             Skip
           </button>
@@ -95,9 +95,9 @@ export default function Onboarding() {
             onClick={next}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-95"
             style={{
-              background: 'rgba(99, 102, 241, 0.2)',
-              color: '#a5b4fc',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
+              background: 'var(--color-border-strong)',
+              color: 'var(--color-accent-active)',
+              border: '1px solid var(--color-border-strong)',
             }}
           >
             {isLast ? 'Got it!' : 'Next'}

@@ -4,10 +4,10 @@ import { ArrowLeft, Circle, Layers, Server, Database, Settings } from 'lucide-re
 import { API_BASE } from '../lib/api';
 
 const CATEGORY_CONFIG = {
-  frontend: { label: 'Frontend', Icon: Layers, color: '#6366f1' },
-  backend: { label: 'Backend', Icon: Server, color: '#10b981' },
-  database: { label: 'Database', Icon: Database, color: '#f59e0b' },
-  general: { label: 'General', Icon: Settings, color: '#94a3b8' },
+  frontend: { label: 'Frontend', Icon: Layers, color: 'var(--color-accent)' },
+  backend: { label: 'Backend', Icon: Server, color: 'var(--color-success)' },
+  database: { label: 'Database', Icon: Database, color: 'var(--color-warning)' },
+  general: { label: 'General', Icon: Settings, color: 'var(--color-text-secondary)' },
 };
 
 function ConfidenceDots({ confidence }) {
@@ -22,9 +22,9 @@ function ConfidenceDots({ confidence }) {
           className="w-1.5 h-1.5 rounded-full transition-all duration-500"
           style={{
             background: i < filled
-              ? confidence > 0.7 ? '#10b981' : confidence > 0.3 ? '#f59e0b' : '#6366f1'
-              : 'rgba(255,255,255,0.08)',
-            boxShadow: i < filled ? `0 0 4px ${confidence > 0.7 ? '#10b981' : confidence > 0.3 ? '#f59e0b' : '#6366f1'}40` : 'none',
+              ? confidence > 0.7 ? 'var(--color-success)' : confidence > 0.3 ? 'var(--color-warning)' : 'var(--color-accent)'
+              : 'var(--color-border-visible)',
+            boxShadow: i < filled ? `0 0 4px ${confidence > 0.7 ? 'var(--color-success)' : confidence > 0.3 ? 'var(--color-warning)' : 'var(--color-accent)'}40` : 'none',
           }}
         />
       ))}
@@ -39,27 +39,27 @@ function ConceptCard({ concept }) {
     <div
       className="rounded-xl p-3.5 transition-all duration-200"
       style={{
-        background: hasProgress ? '#1a1b2e' : '#12131f',
-        border: `1px solid ${hasProgress ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)'}`,
+        background: hasProgress ? 'var(--color-bg-surface)' : 'var(--color-bg-surface)',
+        border: `1px solid ${hasProgress ? 'var(--color-border-visible)' : 'var(--color-bg-sunken)'}`,
         opacity: hasProgress ? 1 : 0.6,
       }}
     >
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <span className="text-[13px] font-medium" style={{ color: hasProgress ? '#e2e8f0' : '#64748b' }}>
+        <span className="text-[13px] font-medium" style={{ color: hasProgress ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>
           {concept.name}
         </span>
         <ConfidenceDots confidence={concept.confidence} />
       </div>
-      <p className="text-[11px] leading-relaxed" style={{ color: '#64748b' }}>
+      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--color-text-tertiary)' }}>
         {concept.description}
       </p>
       {concept.encounters > 0 && (
         <div className="flex items-center gap-3 mt-2">
-          <span className="text-[10px]" style={{ color: '#475569' }}>
+          <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
             {concept.encounters} encounter{concept.encounters !== 1 ? 's' : ''}
           </span>
           {concept.last_encountered_at && (
-            <span className="text-[10px]" style={{ color: '#475569' }}>
+            <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
               Last: {new Date(concept.last_encountered_at).toLocaleDateString()}
             </span>
           )}
@@ -94,33 +94,33 @@ export default function SkillProfile() {
   const totalConcepts = profile?.concepts?.length || 0;
 
   return (
-    <div className="w-full min-h-full overflow-y-auto" style={{ background: '#0a0a14' }}>
+    <div className="w-full min-h-full overflow-y-auto" style={{ background: 'var(--color-bg-base)' }}>
       {/* Header */}
       <div
         className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5"
         style={{
-          background: 'rgba(10, 10, 20, 0.92)',
+          background: 'var(--color-bg-elevated)',
           backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--color-border-subtle)',
         }}
       >
         <button
           onClick={() => navigate(-1)}
           className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200"
-          style={{ color: '#64748b', background: 'rgba(255,255,255,0.04)' }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#94a3b8'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#64748b'; }}
+          style={{ color: 'var(--color-text-tertiary)', background: 'var(--color-bg-sunken)' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-border-visible)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-bg-sunken)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
         >
           <ArrowLeft size={16} />
         </button>
-        <span className="font-heading text-sm font-semibold" style={{ color: '#e2e8f0' }}>
-          Skill Profile
+        <span className="font-heading text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          Comprehension Profile
         </span>
         {totalConcepts > 0 && (
           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full ml-2" style={{
-            background: 'rgba(99, 102, 241, 0.15)',
-            color: '#a5b4fc',
-            border: '1px solid rgba(99, 102, 241, 0.2)',
+            background: 'var(--color-accent-soft)',
+            color: 'var(--color-accent-active)',
+            border: '1px solid var(--color-border-strong)',
           }}>
             {totalEncountered}/{totalConcepts} concepts encountered
           </span>
@@ -133,13 +133,13 @@ export default function SkillProfile() {
           <div className="space-y-6">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="space-y-3">
-                <div className="w-24 h-4 rounded-lg" style={{ background: '#1a1b2e' }} />
+                <div className="w-24 h-4 rounded-lg" style={{ background: 'var(--color-bg-surface)' }} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[...Array(3)].map((_, j) => (
                     <div
                       key={j}
                       className="h-20 rounded-xl"
-                      style={{ background: '#12131f', animation: `pulse 1.5s ease-in-out infinite ${(i * 3 + j) * 0.1}s` }}
+                      style={{ background: 'var(--color-bg-surface)', animation: `pulse 1.5s ease-in-out infinite ${(i * 3 + j) * 0.1}s` }}
                     />
                   ))}
                 </div>
@@ -151,18 +151,18 @@ export default function SkillProfile() {
             {/* Progress overview */}
             <div
               className="rounded-2xl p-5 mb-8"
-              style={{ background: '#12131f', border: '1px solid rgba(255,255,255,0.06)' }}
+              style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)' }}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold" style={{ color: '#e2e8f0' }}>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                   Your understanding
                 </h3>
-                <span className="text-xs" style={{ color: '#64748b' }}>
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                   {totalEncountered} of {totalConcepts} concepts
                 </span>
               </div>
               {/* Progress bar */}
-              <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-bg-sunken)' }}>
                 <div
                   className="h-full rounded-full transition-all duration-700 ease-out"
                   style={{
@@ -188,7 +188,7 @@ export default function SkillProfile() {
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: config.color }}>
                         {config.label}
                       </span>
-                      <span className="text-[10px] ml-1" style={{ color: '#475569' }}>
+                      <span className="text-[10px] ml-1" style={{ color: 'var(--color-text-tertiary)' }}>
                         {concepts.filter(c => c.encounters > 0).length}/{concepts.length}
                       </span>
                     </div>
@@ -205,7 +205,7 @@ export default function SkillProfile() {
             {/* Exploration timeline */}
             {profile?.timeline?.length > 0 && (
               <div className="mt-10">
-                <h3 className="text-sm font-semibold mb-4" style={{ color: '#e2e8f0' }}>
+                <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
                   Exploration timeline
                 </h3>
                 <div className="space-y-2">
@@ -214,22 +214,22 @@ export default function SkillProfile() {
                       key={project.id}
                       className="flex items-center gap-3 rounded-xl px-4 py-3"
                       style={{
-                        background: '#12131f',
-                        border: '1px solid rgba(255,255,255,0.04)',
+                        background: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-bg-sunken)',
                       }}
                     >
                       <Circle
                         size={8}
-                        fill={project.is_curated ? '#10b981' : '#6366f1'}
+                        fill={project.is_curated ? 'var(--color-success)' : 'var(--color-accent)'}
                         stroke="none"
                       />
-                      <span className="text-[13px] font-medium flex-1" style={{ color: '#e2e8f0' }}>
+                      <span className="text-[13px] font-medium flex-1" style={{ color: 'var(--color-text-primary)' }}>
                         {project.name}
                       </span>
-                      <span className="text-[11px]" style={{ color: '#475569' }}>
+                      <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
                         {project.is_curated ? 'Curated' : 'Upload'}
                       </span>
-                      <span className="text-[11px]" style={{ color: '#475569' }}>
+                      <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
                         {new Date(project.created_at).toLocaleDateString()}
                       </span>
                     </div>

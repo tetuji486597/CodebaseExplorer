@@ -39,7 +39,6 @@ Respond with ONLY valid JSON matching this exact schema:
     {
       "id": "concept-1",
       "name": "Human readable name",
-      "emoji": "single emoji",
       "color": "one of: teal, purple, coral, blue, amber, pink, green, gray",
       "description": "Plain English description for non-technical person",
       "fileIds": ["file paths that belong to this concept"]

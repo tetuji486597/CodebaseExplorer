@@ -12,6 +12,7 @@ import userStateRoutes from './routes/user-state.js';
 import githubRoutes from './routes/github.js';
 import curatedRoutes from './routes/curated.js';
 import skillProfileRoutes from './routes/skill-profile.js';
+import quizRoutes from './routes/quiz.js';
 
 const app = new Hono();
 
@@ -34,6 +35,7 @@ app.route('/api/user-state', userStateRoutes);
 app.route('/api/github', githubRoutes);
 app.route('/api/curated', curatedRoutes);
 app.route('/api/skill-profile', skillProfileRoutes);
+app.route('/api/quiz', quizRoutes);
 
 const port = parseInt(process.env.PORT || '3007');
 console.log(`Server starting on port ${port}`);

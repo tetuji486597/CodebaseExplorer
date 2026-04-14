@@ -1,17 +1,65 @@
 import { Hono } from 'hono';
 import { supabase } from '../db/supabase.js';
+import { runQuizGeneration } from '../pipeline/quizGeneration.js';
 
 const app = new Hono();
+
+function buildSynthesisFromGraph(graph: any, fallbackDescription: string) {
+  return {
+    concepts: (graph.concepts || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color || 'gray',
+      metaphor: c.metaphor || '',
+      one_liner: c.one_liner || '',
+      explanation: c.explanation || '',
+      deep_explanation: c.deep_explanation || '',
+      file_ids: c.file_ids || [],
+      importance: c.importance || 'normal',
+    })),
+    edges: (graph.edges || []).map((e: any) => ({
+      source: e.source,
+      target: e.target,
+      relationship: e.relationship || '',
+      strength: e.strength || 'moderate',
+    })),
+    suggested_starting_concept: graph.suggested_starting_concept || '',
+    codebase_summary: graph.codebase_summary || fallbackDescription || '',
+  };
+}
 
 // GET /api/curated - List all curated codebases
 app.get('/', async (c) => {
   const { data, error } = await supabase
     .from('curated_codebases')
-    .select('id, name, description, difficulty, primary_concepts, github_url')
+    .select('id, name, description, difficulty, primary_concepts, github_url, app_preview')
     .order('difficulty', { ascending: true });
 
   if (error) return c.json({ error: error.message }, 500);
-  return c.json(data);
+
+  // Return a has_preview flag instead of the full preview data (lighter payload)
+  const result = (data || []).map(({ app_preview, ...rest }) => ({
+    ...rest,
+    has_preview: !!app_preview,
+  }));
+  return c.json(result);
+});
+
+// GET /api/curated/:id/preview - Get preview data for a curated codebase
+app.get('/:id/preview', async (c) => {
+  const id = c.req.param('id');
+
+  const { data, error } = await supabase
+    .from('curated_codebases')
+    .select('app_preview')
+    .eq('id', id)
+    .single();
+
+  if (error || !data?.app_preview) {
+    return c.json({ error: 'No preview available' }, 404);
+  }
+
+  return c.json(data.app_preview);
 });
 
 // GET /api/curated/:id - Get full curated codebase with concept graph
@@ -57,6 +105,21 @@ app.post('/:id/load', async (c) => {
     .single();
 
   if (existing) {
+    // Check if quiz questions exist; if not, generate them in the background.
+    // This handles curated projects created before quiz generation was added.
+    const { count } = await supabase
+      .from('quiz_questions')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', existing.id);
+
+    if (!count) {
+      const graph = codebase.concept_graph as any;
+      const synthesis = buildSynthesisFromGraph(graph, codebase.description);
+      runQuizGeneration(existing.id, synthesis, []).catch((err) => {
+        console.error('Background quiz generation failed for existing curated project:', err);
+      });
+    }
+
     return c.json({ projectId: existing.id });
   }
 
@@ -87,7 +150,6 @@ app.post('/:id/load', async (c) => {
     project_id: project.id,
     concept_key: concept.id,
     name: concept.name,
-    emoji: concept.emoji || '',
     color: concept.color,
     metaphor: concept.metaphor,
     one_liner: concept.one_liner,
@@ -127,6 +189,14 @@ app.post('/:id/load', async (c) => {
     explored_files: [],
     time_per_concept: {},
     exploration_path: explorationPath,
+  });
+
+  // Fire-and-forget: generate quiz questions in the background.
+  // Curated projects skip the pipeline, so we synthesize the input from concept_graph.
+  const synthesis = buildSynthesisFromGraph(graph, codebase.description);
+
+  runQuizGeneration(project.id, synthesis, []).catch((err) => {
+    console.error('Background quiz generation failed for curated project:', err);
   });
 
   return c.json({ projectId: project.id });

@@ -1,12 +1,16 @@
+// Warm muted concept palette — 8 tones that sit on cream/light backgrounds.
+// Each color maps to the same { fill, stroke, text, accent } shape used
+// by the canvas drawer. "accent" is used for edges/glows; keep it slightly
+// darker than stroke so hover outlines read clearly.
 export const CONCEPT_COLORS = {
-  teal: { fill: '#0d2d2a', stroke: '#10b981', text: '#6ee7b7', accent: '#10b981', fillLight: '#9FE1CB', strokeLight: '#0F6E56', textLight: '#04342C' },
-  purple: { fill: '#1e1b4b', stroke: '#8b5cf6', text: '#c4b5fd', accent: '#8b5cf6', fillLight: '#CECBF6', strokeLight: '#534AB7', textLight: '#26215C' },
-  coral: { fill: '#3b1218', stroke: '#ef4444', text: '#fca5a5', accent: '#ef4444', fillLight: '#F5C4B3', strokeLight: '#993C1D', textLight: '#4A1B0C' },
-  blue: { fill: '#0c1e3a', stroke: '#6366f1', text: '#a5b4fc', accent: '#6366f1', fillLight: '#B5D4F4', strokeLight: '#185FA5', textLight: '#042C53' },
-  amber: { fill: '#2d1f05', stroke: '#f59e0b', text: '#fcd34d', accent: '#f59e0b', fillLight: '#FAC775', strokeLight: '#BA7517', textLight: '#412402' },
-  pink: { fill: '#2d1226', stroke: '#ec4899', text: '#f9a8d4', accent: '#ec4899', fillLight: '#F4C0D1', strokeLight: '#993556', textLight: '#4B1528' },
-  green: { fill: '#0d2818', stroke: '#06b6d4', text: '#67e8f9', accent: '#06b6d4', fillLight: '#C0DD97', strokeLight: '#3B6D11', textLight: '#173404' },
-  gray: { fill: '#1a1a2e', stroke: '#94a3b8', text: '#cbd5e1', accent: '#94a3b8', fillLight: '#D3D1C7', strokeLight: '#5F5E5A', textLight: '#2C2C2A' },
+  teal:   { fill: '#D6E0D3', stroke: '#6E8A6A', text: '#2E3F2C', accent: '#6E8A6A' }, // sage
+  purple: { fill: '#E3D5D9', stroke: '#9A6B78', text: '#3E2228', accent: '#9A6B78' }, // dusk rose
+  coral:  { fill: '#E8D6CD', stroke: '#A0614F', text: '#43251B', accent: '#A0614F' }, // clay
+  blue:   { fill: '#D8DCE2', stroke: '#6B7F8C', text: '#26323A', accent: '#6B7F8C' }, // slate-blue
+  amber:  { fill: '#E0DACB', stroke: '#9A8F65', text: '#40381C', accent: '#9A8F65' }, // khaki
+  pink:   { fill: '#E3D5D9', stroke: '#9A6B78', text: '#3E2228', accent: '#9A6B78' }, // dusk rose
+  green:  { fill: '#D3D8CD', stroke: '#7F8A6E', text: '#2E3326', accent: '#7F8A6E' }, // olive
+  gray:   { fill: '#E1DCD2', stroke: '#857D6A', text: '#2F2B22', accent: '#857D6A' }, // neutral
 };
 
 export const COLOR_NAMES = Object.keys(CONCEPT_COLORS);
@@ -15,7 +19,6 @@ export const sampleConcepts = [
   {
     id: 'auth',
     name: 'Sign In / Sign Up',
-    emoji: '🔑',
     color: 'teal',
     description: 'Handles user registration, login, and authentication. Manages secure user sessions and password verification.',
     metaphor: 'Like the bouncer at a nightclub -- checks your ID at the door, stamps your hand so you can come and go, and remembers who is allowed in.',
@@ -28,7 +31,6 @@ export const sampleConcepts = [
   {
     id: 'feed',
     name: 'Home Feed',
-    emoji: '🏠',
     color: 'purple',
     description: 'Displays a personalized stream of posts from users you follow. Loads and refreshes content as you scroll.',
     metaphor: 'Like a newspaper that rewrites itself every time you pick it up, showing you stories only from writers you have subscribed to.',
@@ -41,7 +43,6 @@ export const sampleConcepts = [
   {
     id: 'posts',
     name: 'Posts',
-    emoji: '📸',
     color: 'coral',
     description: 'Manages creating, editing, and deleting posts. Handles post metadata like captions, hashtags, and timestamps.',
     metaphor: 'Like pinning a photo to a community bulletin board -- you write a caption, stick it up, and everyone walking by can see it, like it, or leave a note.',
@@ -54,7 +55,6 @@ export const sampleConcepts = [
   {
     id: 'profiles',
     name: 'User Profiles',
-    emoji: '👤',
     color: 'blue',
     description: 'Shows user information, bio, profile picture, and follower lists. Allows users to edit their own profile.',
     metaphor: 'Like your personal business card and trophy case combined -- it shows who you are and everything you have shared.',
@@ -67,7 +67,6 @@ export const sampleConcepts = [
   {
     id: 'notifications',
     name: 'Notifications',
-    emoji: '🔔',
     color: 'amber',
     description: 'Alerts users about likes, comments, follows, and other interactions. Manages notification preferences and delivery.',
     metaphor: 'Like a personal assistant who taps you on the shoulder whenever someone interacts with your work -- "Hey, someone liked your photo!"',
@@ -80,7 +79,6 @@ export const sampleConcepts = [
   {
     id: 'media',
     name: 'Media Storage',
-    emoji: '🗂️',
     color: 'pink',
     description: 'Stores and serves images and videos. Handles file uploads, compression, and efficient retrieval.',
     metaphor: 'Like a giant warehouse with a sorting system -- photos come in, get organized, resized, and filed away so they can be found and delivered quickly.',
@@ -93,7 +91,6 @@ export const sampleConcepts = [
   {
     id: 'search',
     name: 'Search',
-    emoji: '🔍',
     color: 'green',
     description: 'Allows users to find posts, users, and hashtags. Provides fast search results with filtering options.',
     metaphor: 'Like a librarian who knows where everything is -- you describe what you are looking for, and they pull the right results from millions of entries in seconds.',
@@ -106,7 +103,6 @@ export const sampleConcepts = [
   {
     id: 'database',
     name: 'Database',
-    emoji: '🗄️',
     color: 'gray',
     description: 'The core data storage for all application information. Manages users, posts, relationships, and metrics.',
     metaphor: 'Like the foundation and filing cabinets of a building -- everything the app knows is stored here, organized in labeled drawers so any part of the system can find what it needs.',
@@ -119,7 +115,6 @@ export const sampleConcepts = [
   {
     id: 'email',
     name: 'Email',
-    emoji: '✉️',
     color: 'teal',
     description: 'Sends transactional emails to users for verification, password resets, and activity notifications.',
     metaphor: 'Like a postal service that sends official letters on behalf of the app -- welcome letters, password reset notices, and activity updates.',
