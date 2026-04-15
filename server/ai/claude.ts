@@ -36,6 +36,8 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
           },
         ],
         tool_choice: { type: 'tool', name: opts.schemaName },
+      }, {
+        timeout: 60_000, // 60s — fail fast rather than hang for 10min default
       });
 
       const toolBlock = response.content.find((b) => b.type === 'tool_use');
@@ -47,10 +49,18 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
       console.log(`[claude] ${opts.schemaName} response keys: ${Object.keys(input as any || {}).join(', ')}`);
       return input;
     } catch (err: any) {
-      if (err?.status === 429 && attempt < maxRetries - 1) {
-        const retryAfter = parseInt(err?.headers?.get?.('retry-after') || '5', 10);
-        const waitTime = retryAfter * 1000;
-        console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
+      const isRetryable = err?.status === 429
+        || err?.code === 'ETIMEDOUT'
+        || err?.code === 'ECONNRESET'
+        || err?.name === 'TimeoutError'
+        || (err?.message && err.message.includes('timed out'));
+
+      if (isRetryable && attempt < maxRetries - 1) {
+        const retryAfter = typeof err?.headers?.get === 'function'
+          ? parseInt(err.headers.get('retry-after') || '5', 10)
+          : 5;
+        const waitTime = Math.min(retryAfter * 1000, 30_000); // Cap at 30s
+        console.log(`[claude] ${err?.status || err?.code || 'timeout'}, waiting ${waitTime / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
         await new Promise((r) => setTimeout(r, waitTime));
         continue;
       }

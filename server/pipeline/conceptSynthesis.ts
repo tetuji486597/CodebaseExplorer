@@ -26,31 +26,7 @@ export interface ConceptSynthesisResult {
   codebase_summary: string;
 }
 
-export async function runConceptSynthesis(
-  projectId: string,
-  fileAnalyses: FileAnalysis[],
-  fileTree: any,
-  framework: string
-): Promise<ConceptSynthesisResult> {
-  const analysisText = fileAnalyses
-    .map(
-      (f) =>
-        `File: ${f.path}
-Purpose: ${f.purpose || 'unknown'}
-Concepts: ${(f.concepts || []).join(', ')}
-Exports: ${(f.key_exports || []).map((e) => e.name).join(', ')}
-Role: ${f.role || 'source'}
-Complexity: ${f.complexity || 'moderate'}
-Dependencies: ${(f.depends_on || []).join(', ')}`
-    )
-    .join('\n\n');
-
-  console.log(`Concept synthesis input: ${fileAnalyses.length} files, analysisText length: ${analysisText.length}`);
-
-  const allPaths = fileAnalyses.map((f) => f.path);
-
-  const raw = await callClaudeStructured<any>({
-    system: `You are synthesizing an architecture map from file analyses for developers joining a new codebase (onboarding engineers, due-diligence reviewers, open-source contributors, legacy-code auditors). Create meaningful architectural concepts that group related files. Name concepts using proper software engineering terminology where applicable (e.g., "Authentication Middleware", "REST API Layer", "State Management", "Data Access Layer") rather than generic labels. For the "metaphor" field, give a concise real-world analogy that helps someone quickly grasp the concept's role (e.g., "Acts as a security checkpoint — every request passes through here before reaching any handler"). For "explanation", use precise technical language for working engineers while still explaining project-specific patterns.
+const CONCEPT_SYNTHESIS_SYSTEM = `You are synthesizing an architecture map from file analyses for developers joining a new codebase (onboarding engineers, due-diligence reviewers, open-source contributors, legacy-code auditors). Create meaningful architectural concepts that group related files. Name concepts using proper software engineering terminology where applicable (e.g., "Authentication Middleware", "REST API Layer", "State Management", "Data Access Layer") rather than generic labels. For the "metaphor" field, give a concise real-world analogy that helps someone quickly grasp the concept's role (e.g., "Acts as a security checkpoint — every request passes through here before reaching any handler"). For "explanation", use precise technical language for working engineers while still explaining project-specific patterns.
 
 You MUST return a JSON object with EXACTLY these fields:
 {
@@ -72,7 +48,32 @@ You MUST return a JSON object with EXACTLY these fields:
   ],
   "suggested_starting_concept": "concept_id",
   "codebase_summary": "2-3 sentences"
-}`,
+}`;
+
+function formatAnalysisText(files: FileAnalysis[]): string {
+  return files
+    .map(
+      (f) =>
+        `File: ${f.path}
+Purpose: ${f.purpose || 'unknown'}
+Concepts: ${(f.concepts || []).join(', ')}
+Exports: ${(f.key_exports || []).map((e) => e.name).join(', ')}
+Role: ${f.role || 'source'}
+Complexity: ${f.complexity || 'moderate'}
+Dependencies: ${(f.depends_on || []).join(', ')}`
+    )
+    .join('\n\n');
+}
+
+async function synthesizeChunk(
+  fileAnalyses: FileAnalysis[],
+  framework: string,
+): Promise<any> {
+  const analysisText = formatAnalysisText(fileAnalyses);
+  const allPaths = fileAnalyses.map((f) => f.path);
+
+  return callClaudeStructured<any>({
+    system: CONCEPT_SYNTHESIS_SYSTEM,
     prompt: `This is a ${framework} project with ${fileAnalyses.length} files.
 
 File paths: ${allPaths.join(', ')}
@@ -86,6 +87,60 @@ Create a concept map with 3-10 concepts (scale with complexity). Every file must
     maxTokens: Math.min(8192, Math.max(4096, fileAnalyses.length * 200)),
     model: 'fast',
   });
+}
+
+export async function runConceptSynthesis(
+  projectId: string,
+  fileAnalyses: FileAnalysis[],
+  fileTree: any,
+  framework: string
+): Promise<ConceptSynthesisResult> {
+  console.log(`Concept synthesis input: ${fileAnalyses.length} files`);
+
+  let raw: any;
+  const CHUNK_THRESHOLD = 100;
+
+  if (fileAnalyses.length <= CHUNK_THRESHOLD) {
+    // Small enough for a single call
+    raw = await synthesizeChunk(fileAnalyses, framework);
+  } else {
+    // Split into chunks, synthesize each, then merge
+    const chunkSize = 50;
+    const chunks: FileAnalysis[][] = [];
+    for (let i = 0; i < fileAnalyses.length; i += chunkSize) {
+      chunks.push(fileAnalyses.slice(i, i + chunkSize));
+    }
+    console.log(`Splitting concept synthesis into ${chunks.length} chunks of ~${chunkSize} files`);
+
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) => synthesizeChunk(chunk, framework))
+    );
+
+    // Merge: collect all concepts and edges, then deduplicate with a merge pass
+    const allConcepts = chunkResults.flatMap((r) => r.concepts || []);
+    const allEdges = chunkResults.flatMap((r) => r.edges || []);
+    const summaries = chunkResults.map((r) => r.codebase_summary || '').filter(Boolean);
+
+    // Use AI to merge overlapping concepts
+    raw = await callClaudeStructured<any>({
+      system: `You are merging concept maps from multiple analysis chunks into one unified architecture map. Deduplicate overlapping concepts (merge their file_ids). Keep 3-10 final concepts. Preserve all file paths — every file must belong to exactly one concept. Use the same JSON schema as the input.`,
+      prompt: `Merge these ${allConcepts.length} concepts and ${allEdges.length} edges into a unified concept map.
+
+Concepts:
+${JSON.stringify(allConcepts, null, 2)}
+
+Edges:
+${JSON.stringify(allEdges, null, 2)}
+
+Summaries from chunks: ${summaries.join(' | ')}
+
+Return a single unified concept_synthesis result with deduplicated concepts (3-10), merged edges, a suggested_starting_concept, and a codebase_summary.`,
+      schema: conceptSynthesisSchema,
+      schemaName: 'concept_synthesis',
+      maxTokens: 8192,
+      model: 'fast',
+    });
+  }
 
   console.log(`Concept synthesis raw response keys: ${Object.keys(raw)}, concepts: ${raw.concepts?.length}, edges: ${raw.edges?.length}`);
 

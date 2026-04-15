@@ -2,17 +2,37 @@ import { useState, useEffect, useRef } from 'react';
 
 const STAGE_TARGETS = { 0: 5, 1: 15, 2: 40, 3: 75, 6: 100 };
 
+// Interpolate within a stage using batch progress
+function computeTarget(progress) {
+  const stage = progress?.stage;
+  if (stage == null || STAGE_TARGETS[stage] == null) return null;
+
+  const stageBase = STAGE_TARGETS[stage];
+
+  // If batch info is available, interpolate between this stage and the next
+  if (progress.batch && progress.totalBatches && progress.totalBatches > 1) {
+    const stages = Object.keys(STAGE_TARGETS).map(Number).sort((a, b) => a - b);
+    const idx = stages.indexOf(stage);
+    const nextTarget = idx < stages.length - 1 ? STAGE_TARGETS[stages[idx + 1]] : 100;
+    const range = nextTarget - stageBase;
+    const fraction = progress.batch / progress.totalBatches;
+    return stageBase + range * fraction * 0.8; // 0.8 so we don't hit next stage target early
+  }
+
+  return stageBase;
+}
+
 export default function useSmoothedProgress(pipelineProgress) {
   const [displayPercent, setDisplayPercent] = useState(0);
   const targetRef = useRef(0);
   const rafRef = useRef(null);
 
   useEffect(() => {
-    const stage = pipelineProgress?.stage;
-    if (stage != null && STAGE_TARGETS[stage] != null) {
-      targetRef.current = STAGE_TARGETS[stage];
+    const target = computeTarget(pipelineProgress);
+    if (target != null) {
+      targetRef.current = target;
     }
-  }, [pipelineProgress?.stage]);
+  }, [pipelineProgress?.stage, pipelineProgress?.batch]);
 
   useEffect(() => {
     let lastTime = performance.now();

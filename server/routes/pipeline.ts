@@ -15,7 +15,6 @@ app.get('/projects', async (c) => {
     .from('projects')
     .select('id, name, framework, language, file_count, summary, created_at, pipeline_status')
     .eq('user_id', userId)
-    .is('curated_codebase_id', null)
     .in('pipeline_status', ['complete', 'enriched'])
     .order('created_at', { ascending: false })
     .limit(50);
@@ -91,6 +90,14 @@ app.post('/start', async (c) => {
 
   if (cachedId) {
     console.log(`Cache hit for content hash ${contentHash}, returning project ${cachedId}`);
+    // Associate cached project with current user if not already owned
+    if (userId) {
+      await supabase
+        .from('projects')
+        .update({ user_id: userId })
+        .eq('id', cachedId)
+        .is('user_id', null);
+    }
     return c.json({ projectId: cachedId, cached: true });
   }
 
@@ -152,6 +159,7 @@ app.post('/:id/cancel', async (c) => {
 // GET /api/pipeline/:id/stream - SSE stream of pipeline progress
 app.get('/:id/stream', async (c) => {
   const projectId = c.req.param('id');
+  const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
   return streamSSE(c, async (stream) => {
     let lastStatus = '';
@@ -166,6 +174,24 @@ app.get('/:id/stream', async (c) => {
         .single();
 
       if (project) {
+        // Detect stale/orphaned pipelines
+        const isActive = !['complete', 'failed', 'cancelled', 'enriched', 'pending'].includes(project.pipeline_status);
+        if (isActive && project.pipeline_progress?.updated_at) {
+          const lastUpdate = new Date(project.pipeline_progress.updated_at).getTime();
+          const elapsed = Date.now() - lastUpdate;
+          if (elapsed > STALE_THRESHOLD_MS) {
+            await supabase
+              .from('projects')
+              .update({
+                pipeline_status: 'failed',
+                pipeline_progress: { stage: 0, total_stages: 7, message: 'Pipeline timed out — please retry' },
+              })
+              .eq('id', projectId);
+            project.pipeline_status = 'failed';
+            project.pipeline_progress = { stage: 0, total_stages: 7, message: 'Pipeline timed out — please retry' };
+          }
+        }
+
         const currentStatus = JSON.stringify(project);
         if (currentStatus !== lastStatus) {
           await stream.writeSSE({

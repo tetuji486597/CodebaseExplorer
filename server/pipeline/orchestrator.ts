@@ -7,6 +7,7 @@ import { runEmbedding } from './embedding.js';
 // proactiveSeeding replaced with deterministic inline sort
 import { runConceptMapping } from './conceptMapping.js';
 import { runQuizGeneration } from './quizGeneration.js';
+import { updateProgress } from './progress.js';
 
 export interface PipelineInput {
   fileTree: any;
@@ -21,16 +22,6 @@ async function isCancelled(projectId: string): Promise<boolean> {
     .eq('id', projectId)
     .single();
   return data?.pipeline_status === 'cancelled';
-}
-
-async function updateProgress(projectId: string, stage: number, message: string, status?: string) {
-  await supabase
-    .from('projects')
-    .update({
-      pipeline_status: status || `stage_${stage}`,
-      pipeline_progress: { stage, total_stages: 7, message },
-    })
-    .eq('id', projectId);
 }
 
 export async function runPipeline(projectId: string, input: PipelineInput) {
@@ -84,8 +75,15 @@ export async function runPipeline(projectId: string, input: PipelineInput) {
     }
 
     // Filter out low-value files from AI analysis (still stored in DB above)
-    const analysisContents = filterForAnalysis(input.fileContents);
+    let analysisContents = filterForAnalysis(input.fileContents);
     console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
+
+    // Cap at 100 files to keep pipeline fast — 2 batches of 50 in parallel
+    const MAX_ANALYSIS_FILES = 100;
+    if (Object.keys(analysisContents).length > MAX_ANALYSIS_FILES) {
+      console.log(`Capping analysis from ${Object.keys(analysisContents).length} to ${MAX_ANALYSIS_FILES} files`);
+      analysisContents = prioritizeFiles(analysisContents, MAX_ANALYSIS_FILES);
+    }
 
     // Early exit: files exist but none are worth analyzing (e.g., only config/lock files)
     if (Object.keys(analysisContents).length === 0) {
@@ -258,6 +256,40 @@ const SKIP_CONFIG_PATTERNS = [
   /^webpack\.config/,
   /^tsconfig.*\.json$/,
 ];
+
+function prioritizeFiles(fileContents: Record<string, string>, limit: number): Record<string, string> {
+  const entries = Object.entries(fileContents);
+
+  // Score files by likely importance
+  const scored = entries.map(([path, content]) => {
+    let score = 0;
+    const depth = path.split('/').length;
+    // Shallower paths are more important (entry points, core modules)
+    score += Math.max(0, 10 - depth);
+    // Entry points and core files
+    if (/index\.(ts|js|tsx|jsx)$/.test(path)) score += 5;
+    if (/main\.(ts|js|tsx|jsx)$/.test(path)) score += 5;
+    if (/app\.(ts|js|tsx|jsx)$/.test(path)) score += 5;
+    if (/server\.(ts|js)$/.test(path)) score += 4;
+    // Source code over tests/configs
+    if (/\/(src|lib|app|server|api)\//.test(path)) score += 3;
+    if (/\.(test|spec)\.(ts|js|tsx|jsx)$/.test(path)) score -= 5;
+    // Prefer code files over data/docs
+    if (/\.(ts|tsx|js|jsx|py|go|rs|java)$/.test(path)) score += 2;
+    if (/\.(md|txt|json|yaml|yml)$/.test(path)) score -= 2;
+    // Larger files tend to have more logic
+    score += Math.min(3, Math.floor(content.length / 500));
+    return { path, content, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const result: Record<string, string> = {};
+  for (const { path, content } of scored.slice(0, limit)) {
+    result[path] = content;
+  }
+  return result;
+}
 
 function filterForAnalysis(fileContents: Record<string, string>): Record<string, string> {
   const filtered: Record<string, string> = {};
