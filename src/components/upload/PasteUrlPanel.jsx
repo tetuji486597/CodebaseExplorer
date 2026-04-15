@@ -13,6 +13,7 @@ export default function PasteUrlPanel() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const user = useStore(s => s.user);
   const getGithubToken = useStore(s => s.getGithubToken);
   const setProjectId = useStore(s => s.setProjectId);
   const setProcessingStatus = useStore(s => s.setProcessingStatus);
@@ -40,6 +41,7 @@ export default function PasteUrlPanel() {
           repoFullName,
           ref: parsed.ref,
           accessToken: getGithubToken(),
+          userId: user?.id,
         }),
       });
 

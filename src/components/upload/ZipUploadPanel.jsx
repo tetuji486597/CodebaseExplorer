@@ -12,6 +12,7 @@ export default function ZipUploadPanel() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+  const user = useStore(s => s.user);
   const setProcessingStatus = useStore(s => s.setProcessingStatus);
   const setProjectId = useStore(s => s.setProjectId);
   const { startListening } = usePipelineListener();
@@ -38,7 +39,7 @@ export default function ZipUploadPanel() {
       const res = await fetch(`${API_BASE}/api/pipeline/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileTree, fileContents, importEdges, projectName: file.name.replace('.zip', '') }),
+        body: JSON.stringify({ fileTree, fileContents, importEdges, projectName: file.name.replace('.zip', ''), userId: user?.id }),
       });
       const { projectId, cached } = await res.json();
       setProjectId(projectId);

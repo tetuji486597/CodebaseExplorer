@@ -14,6 +14,7 @@ const DIFFICULTY_CONFIG = {
 
 export default function CuratedPanel() {
   const navigate = useNavigate();
+  const user = useStore(s => s.user);
   const setProjectId = useStore(s => s.setProjectId);
   const posthog = usePostHog();
   const [codebases, setCodebases] = useState([]);
@@ -33,7 +34,11 @@ export default function CuratedPanel() {
     posthog.capture('repo_uploaded', { source: 'curated' });
     setLoadingId(cb.id);
     try {
-      const res = await fetch(`${API_BASE}/api/curated/${cb.id}/load`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/curated/${cb.id}/load`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id }),
+      });
       const { projectId } = await res.json();
       setProjectId(projectId);
       localStorage.setItem('cbe_curated_id', cb.id);

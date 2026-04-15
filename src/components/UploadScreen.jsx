@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Upload, Library, Link2, FolderOpen } from 'lucide-react';
+import { Upload, Library, Link2, Clock } from 'lucide-react';
 import useStore from '../store/useStore';
 import { usePipelineListener } from '../hooks/usePipelineListener';
 import { API_BASE } from '../lib/api';
@@ -28,6 +28,7 @@ const BASE_TABS = [
   { id: 'repos', label: 'GitHub repos', icon: Github },
   { id: 'zip', label: 'Upload .zip', icon: Upload },
   { id: 'curated', label: 'Open source', icon: Library },
+  { id: 'projects', label: 'Recently viewed', icon: Clock },
 ];
 
 const PERSONAS = [
@@ -50,11 +51,6 @@ export default function UploadScreen() {
   const { startListening } = usePipelineListener();
 
   const hasGithub = !!session?.provider_token;
-  const isSignedIn = !!session?.user;
-
-  const TABS = isSignedIn
-    ? [...BASE_TABS, { id: 'projects', label: 'My projects', icon: FolderOpen }]
-    : BASE_TABS;
 
   // Restore tab after OAuth redirect, or pick a smart default
   const [activeTab, setActiveTab] = useState(() => {
@@ -163,7 +159,7 @@ export default function UploadScreen() {
         display: 'flex', flexDirection: 'column',
         gap: 'clamp(1rem, 2.5vw, 1.5rem)',
       }}>
-        <SourceTabs tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange} />
+        <SourceTabs tabs={BASE_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
 
         <div style={{ animation: 'fade-in 0.25s var(--ease-out)' }} key={activeTab}>
           {activeTab === 'url' && <PasteUrlPanel />}

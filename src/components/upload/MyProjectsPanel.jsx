@@ -74,7 +74,7 @@ export default function MyProjectsPanel() {
     return (
       <EmptyState
         icon={FolderOpen}
-        title="Sign in to see your projects"
+        title="Sign in to see recently viewed codebases"
         description="Connect your GitHub account to view previously analyzed codebases."
       />
     );
@@ -113,8 +113,8 @@ export default function MyProjectsPanel() {
     return (
       <EmptyState
         icon={FolderOpen}
-        title="No projects yet"
-        description="Analyze a codebase and it will show up here for quick access later."
+        title="No recently viewed codebases"
+        description="Codebases you analyze will appear here for quick access."
       />
     );
   }

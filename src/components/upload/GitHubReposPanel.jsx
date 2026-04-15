@@ -26,6 +26,7 @@ const LANGUAGE_COLORS = {
 };
 
 export default function GitHubReposPanel() {
+  const user = useStore(s => s.user);
   const getGithubToken = useStore(s => s.getGithubToken);
   const setProjectId = useStore(s => s.setProjectId);
   const setProcessingStatus = useStore(s => s.setProcessingStatus);
@@ -76,7 +77,7 @@ export default function GitHubReposPanel() {
       const res = await fetch(`${API_BASE}/api/github/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoFullName: repo.full_name, accessToken: token }),
+        body: JSON.stringify({ repoFullName: repo.full_name, accessToken: token, userId: user?.id }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

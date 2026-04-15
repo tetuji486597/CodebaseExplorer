@@ -125,6 +125,14 @@ app.post('/analyze', async (c) => {
     const cachedId = await findCachedProject(contentHash);
     if (cachedId) {
       console.log(`GitHub cache hit for ${repoFullName}, hash ${contentHash}, project ${cachedId}`);
+      // Associate cached project with current user if not already owned
+      if (userId) {
+        await supabase
+          .from('projects')
+          .update({ user_id: userId })
+          .eq('id', cachedId)
+          .is('user_id', null);
+      }
       return c.json({ projectId: cachedId, cached: true });
     }
 

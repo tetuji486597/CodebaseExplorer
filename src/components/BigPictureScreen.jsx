@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
@@ -6,154 +6,9 @@ import { CONCEPT_COLORS } from '../data/sampleData';
 import { FileText, Code2, Globe, Puzzle, ArrowRight } from 'lucide-react';
 import BackBar from './BackBar';
 
+const ExplainerPlayer = lazy(() => import('./ExplainerPlayer'));
+
 const IMPORTANCE_RANK = { critical: 4, high: 3, important: 3, medium: 2, supporting: 1, low: 1 };
-
-function MiniConstellation({ concepts, edges }) {
-  const layout = useMemo(() => {
-    if (!concepts.length) return { nodes: [], lines: [] };
-
-    const svgW = 400;
-    const svgH = 300;
-    const cx = svgW / 2;
-    const cy = svgH / 2;
-
-    // Scale radius based on concept count
-    const count = concepts.length;
-    const rx = Math.min(140, 40 + count * 12);
-    const ry = Math.min(100, 30 + count * 8);
-
-    // Seed a deterministic jitter from concept id
-    const jitter = (id) => {
-      let h = 0;
-      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-      return ((h & 0xff) / 255 - 0.5) * 2; // -1 to 1
-    };
-
-    const sorted = [...concepts].sort(
-      (a, b) => (IMPORTANCE_RANK[b.importance] || 1) - (IMPORTANCE_RANK[a.importance] || 1)
-    );
-
-    const nodes = sorted.map((c, i) => {
-      const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-      const jx = jitter(c.id) * 20;
-      const jy = jitter(c.id + '_y') * 15;
-      const x = cx + rx * Math.cos(angle) + jx;
-      const y = cy + ry * Math.sin(angle) + jy;
-      const rank = IMPORTANCE_RANK[c.importance] || 1;
-      const r = 3 + rank * 2; // 5-11px
-      const color = CONCEPT_COLORS[c.color]?.stroke || 'var(--color-accent)';
-      const floatDuration = 3 + (i % 3);
-      const floatDelay = i * 0.4;
-      return { id: c.id, x, y, r, color, name: c.name, floatDuration, floatDelay };
-    });
-
-    const posMap = {};
-    nodes.forEach((n) => (posMap[n.id] = n));
-
-    const lines = edges
-      .map((e) => {
-        const s = posMap[e.source];
-        const t = posMap[e.target];
-        if (!s || !t) return null;
-        return { x1: s.x, y1: s.y, x2: t.x, y2: t.y };
-      })
-      .filter(Boolean);
-
-    return { nodes, lines };
-  }, [concepts, edges]);
-
-  if (!layout.nodes.length) return null;
-
-  return (
-    <div
-      className="relative w-full flex justify-center"
-      style={{ animation: 'fade-in 1s ease-out 0.4s both' }}
-    >
-      {/* Vignette overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 50% at 50% 50%, transparent 40%, var(--color-bg-base) 100%)',
-        }}
-      />
-
-      <svg
-        viewBox="0 0 400 300"
-        className="w-full"
-        style={{ maxWidth: 480, height: 'auto' }}
-        role="img"
-        aria-label="Architecture constellation preview"
-      >
-        <g
-          style={{
-            transformOrigin: '200px 150px',
-            animation: 'constellation-rotate 80s linear infinite',
-          }}
-        >
-          {/* Edges */}
-          {layout.lines.map((l, i) => (
-            <line
-              key={`e-${i}`}
-              x1={l.x1}
-              y1={l.y1}
-              x2={l.x2}
-              y2={l.y2}
-              stroke="var(--color-border-subtle)"
-              strokeWidth="0.7"
-            />
-          ))}
-
-          {/* Glow halos */}
-          {layout.nodes.map((n) => (
-            <circle
-              key={`g-${n.id}`}
-              cx={n.x}
-              cy={n.y}
-              r={n.r * 2.5}
-              fill={n.color}
-              opacity={0.1}
-              style={{ filter: 'blur(4px)' }}
-            />
-          ))}
-
-          {/* Concept dots */}
-          {layout.nodes.map((n) => (
-            <circle
-              key={`n-${n.id}`}
-              cx={n.x}
-              cy={n.y}
-              r={n.r}
-              fill={n.color}
-              opacity={0.85}
-              style={{
-                animation: `float ${n.floatDuration}s ease-in-out infinite ${n.floatDelay}s`,
-              }}
-            />
-          ))}
-
-          {/* Labels for the top 5 */}
-          {layout.nodes.slice(0, 5).map((n) => (
-            <text
-              key={`t-${n.id}`}
-              x={n.x}
-              y={n.y + n.r + 12}
-              textAnchor="middle"
-              fill="var(--color-text-tertiary)"
-              fontSize="8"
-              fontFamily="'JetBrains Mono', monospace"
-              style={{
-                animation: `float ${n.floatDuration}s ease-in-out infinite ${n.floatDelay}s`,
-              }}
-            >
-              {n.name}
-            </text>
-          ))}
-        </g>
-      </svg>
-    </div>
-  );
-}
 
 function StatItem({ icon: Icon, value, label, delay }) {
   return (
@@ -210,7 +65,6 @@ function ConceptCard({ concept, index }) {
 export default function BigPictureScreen() {
   const navigate = useNavigate();
   const concepts = useStore((s) => s.concepts);
-  const conceptEdges = useStore((s) => s.conceptEdges);
   const projectId = useStore((s) => s.projectId);
   const projectMeta = useStore((s) => s.projectMeta);
   const [restoring, setRestoring] = useState(false);
@@ -273,14 +127,15 @@ export default function BigPictureScreen() {
 
   return (
     <div
-      className="w-full min-h-full overflow-y-auto"
+      className="w-full min-h-full overflow-y-auto flex flex-col"
       style={{ background: 'var(--color-bg-base)' }}
     >
       <BackBar to="/upload" label={projectMeta?.name || 'Overview'} />
       <div
-        className="mx-auto flex flex-col items-center"
+        className="w-full flex flex-col items-center"
         style={{
           maxWidth: 720,
+          margin: '0 auto',
           padding: 'clamp(32px, 6vw, 64px) clamp(16px, 4vw, 24px)',
           gap: 'clamp(32px, 5vw, 48px)',
         }}
@@ -357,8 +212,34 @@ export default function BigPictureScreen() {
           </div>
         </div>
 
-        {/* Mini Constellation */}
-        <MiniConstellation concepts={concepts} edges={conceptEdges} />
+        {/* Explainer Video */}
+        <Suspense
+          fallback={
+            <div
+              className="w-full rounded-2xl flex items-center justify-center"
+              style={{
+                background: 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-subtle)',
+                aspectRatio: '16/9',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{
+                    background: 'var(--color-accent)',
+                    animation: 'processing-dot 1.4s infinite',
+                  }}
+                />
+                <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  Loading video...
+                </span>
+              </div>
+            </div>
+          }
+        >
+          <ExplainerPlayer />
+        </Suspense>
 
         {/* Key Concepts */}
         {topConcepts.length > 0 && (

@@ -86,6 +86,8 @@ app.get('/:id', async (c) => {
 // POST /api/curated/:id/load - Load a curated codebase into the explorer (creates a project record)
 app.post('/:id/load', async (c) => {
   const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const userId = (body as any)?.userId;
 
   const { data: codebase, error: cbError } = await supabase
     .from('curated_codebases')
@@ -98,13 +100,18 @@ app.post('/:id/load', async (c) => {
   // Check if a project already exists for this curated codebase
   const { data: existing } = await supabase
     .from('projects')
-    .select('id')
+    .select('id, user_id')
     .eq('curated_codebase_id', id)
     .eq('pipeline_status', 'complete')
     .limit(1)
     .single();
 
   if (existing) {
+    // Link this curated project to the user if not already linked
+    if (userId && !existing.user_id) {
+      await supabase.from('projects').update({ user_id: userId }).eq('id', existing.id);
+    }
+
     // Check if quiz questions exist; if not, generate them in the background.
     // This handles curated projects created before quiz generation was added.
     const { count } = await supabase
@@ -137,6 +144,7 @@ app.post('/:id/load', async (c) => {
       pipeline_status: 'complete',
       pipeline_progress: { stage: 7, total_stages: 7, message: 'Curated codebase loaded' },
       curated_codebase_id: id,
+      ...(userId ? { user_id: userId } : {}),
     })
     .select()
     .single();

@@ -77,7 +77,7 @@ export default function MyProjects() {
       display: 'flex', flexDirection: 'column',
       background: 'var(--color-bg-base)',
     }}>
-      <BackBar to="/upload" label="My Projects" />
+      <BackBar to="/upload" label="Recently Viewed" />
 
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -89,7 +89,7 @@ export default function MyProjects() {
           {!user && !loading && (
             <EmptyState
               icon={FolderOpen}
-              title="Sign in to see your projects"
+              title="Sign in to see recently viewed codebases"
               description="Connect your GitHub account to view previously analyzed codebases."
               action={{ label: 'Go to upload', onClick: () => navigate('/upload') }}
             />
@@ -127,8 +127,8 @@ export default function MyProjects() {
           {isEmpty && user && (
             <EmptyState
               icon={FolderOpen}
-              title="No projects yet"
-              description="Analyze a codebase and it will show up here for quick access later."
+              title="No recently viewed codebases"
+              description="Codebases you analyze will appear here for quick access."
               action={{ label: 'Analyze a codebase', onClick: () => navigate('/upload') }}
             />
           )}

@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.81.0",
     "@hono/node-server": "^1.19.12",
     "@posthog/react": "^1.9.0",
+    "@remotion/player": "^4.0.448",
     "@supabase/supabase-js": "^2.101.1",
     "@tailwindcss/vite": "^4.2.2",
     "concurrently": "^9.2.1",
@@ -30,6 +31,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "^7.14.0",
+    "remotion": "^4.0.448",
     "rrweb-player": "^1.0.0-alpha.4",
     "tailwindcss": "^4.2.2",
     "zustand": "^5.0.12"
