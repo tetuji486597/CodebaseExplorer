@@ -210,3 +210,23 @@ Run this checklist mentally:
 7. Resize the browser to 375px wide — does it still work and look intentional?
 8. Tap targets on mobile: are they at least 44x44px?
 9. Would this look good in a portfolio? If not, iterate.
+
+---
+
+## Documentation Maintenance
+
+When adding a new user-facing feature (keyboard shortcut, graph interaction, chat capability, CLI command, or UI control):
+1. Add the corresponding entry to `src/components/docs/docsContent.js`
+2. If the feature involves a keyboard shortcut, add it to the `shortcuts` section
+3. If it is a CLI command or flag, add it to the `cli` section
+4. Test that the docs page (`/docs`) renders the new content correctly at both desktop and mobile widths
+
+---
+
+## Deploy Command
+
+When the user says "deploy", perform these steps in order:
+1. Stage all changed files and create a commit with a descriptive message summarizing what changed
+2. Push to the `main` branch on GitHub: `git push origin main`
+3. Deploy the backend to Vercel production: `npx vercel --prod`
+4. Report the deployment URL when complete

@@ -52,6 +52,8 @@ export async function runFileAnalysis(
         schemaName: 'file_analysis',
         maxTokens: Math.min(8192, Math.max(4096, batch.length * 200)),
         model: 'fast',
+        operation: 'file_analysis',
+        projectId,
       });
       // Ensure we got valid results — filter out undefined/null entries
       const files = (result.files || []).filter((f): f is FileAnalysis => f != null && typeof f.path === 'string');

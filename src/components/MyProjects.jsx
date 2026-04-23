@@ -60,7 +60,7 @@ export default function MyProjects() {
     try {
       const result = await fetchAndLoadProject(project.id);
       if (result) {
-        navigate('/overview', { replace: true });
+        navigate(`/explore/${project.id}`, { replace: true });
       } else {
         setLoadingId(null);
       }
@@ -77,7 +77,7 @@ export default function MyProjects() {
       display: 'flex', flexDirection: 'column',
       background: 'var(--color-bg-base)',
     }}>
-      <BackBar to="/upload" label="Recently Viewed" />
+      <BackBar label="Recently Viewed" />
 
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',

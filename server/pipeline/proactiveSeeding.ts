@@ -54,6 +54,8 @@ Return JSON with: exploration_path (array of concept ids in order), reasoning (w
       schemaName: 'proactive_seeding',
       maxTokens: 1024,
       model: 'fast',
+      operation: 'proactive_seeding',
+      projectId,
     });
 
     // Create initial user state with exploration path

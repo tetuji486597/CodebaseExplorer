@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { Sun, Moon, LogOut, Brain, Sparkles, Code2 } from 'lucide-react';
+import { Sun, Moon, LogOut, Brain, Sparkles, Code2, BookOpen, ChevronRight, BarChart3 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { supabase } from '../lib/supabase';
 import BackBar from './BackBar';
@@ -195,7 +195,7 @@ export default function SettingsScreen() {
       flexDirection: 'column',
       background: 'var(--color-bg-base)',
     }}>
-      <BackBar to="/upload" label="Settings" />
+      <BackBar label="Settings" to="/projects" />
 
       <div style={{
         flex: 1,
@@ -330,6 +330,90 @@ export default function SettingsScreen() {
               />
             </div>
           </SectionCard>
+
+          {/* Help & Documentation */}
+          <SectionCard title="Help">
+            <button
+              onClick={() => navigate('/docs')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                width: '100%',
+                padding: '12px 0',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-text-primary)',
+                transition: 'color var(--duration-base) var(--ease-out)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-accent-active)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-sunken)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <BookOpen size={16} strokeWidth={1.75} style={{ color: 'var(--color-accent)' }} />
+              </div>
+              <div style={{ flex: 1, textAlign: 'left' }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>Documentation</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                  Features, shortcuts, CLI reference, and more
+                </div>
+              </div>
+              <ChevronRight size={16} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+            </button>
+          </SectionCard>
+
+          {/* Admin */}
+          {email === 'gordonj2016@outlook.com' && (
+            <SectionCard title="Admin">
+              <button
+                onClick={() => navigate('/admin')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  width: '100%',
+                  padding: '12px 0',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--color-text-primary)',
+                  transition: 'color var(--duration-base) var(--ease-out)',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--color-accent-active)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
+              >
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-bg-sunken)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <BarChart3 size={16} strokeWidth={1.75} style={{ color: 'var(--color-accent)' }} />
+                </div>
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>Spending Dashboard</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                    API costs, usage tracking, per-project breakdown
+                  </div>
+                </div>
+                <ChevronRight size={16} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+              </button>
+            </SectionCard>
+          )}
 
           {/* Sign out */}
           {user && (

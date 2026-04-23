@@ -7,7 +7,7 @@ export default function useChatStream() {
 
   const sendMessage = useCallback(async (text) => {
     const store = useStore.getState();
-    const { projectId, selectedNode, chatMessages, concepts } = store;
+    const { projectId, selectedNode, chatMessages, concepts, chatSessionId } = store;
 
     if (!text.trim() || store.chatLoading) return;
 
@@ -37,10 +37,15 @@ export default function useChatStream() {
     abortRef.current = controller;
 
     try {
+      const expansionState = store.getExpansionState();
+      // Generate session ID if none exists
+      const sessionId = chatSessionId || `${projectId.slice(0, 8)}-${Date.now()}`;
+      if (!chatSessionId) store.setChatSessionId(sessionId);
+
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, projectId, selectedNode, history }),
+        body: JSON.stringify({ message: text, projectId, selectedNode, history, expansionState, sessionId }),
         signal: controller.signal,
       });
 
@@ -48,6 +53,7 @@ export default function useChatStream() {
       const decoder = new TextDecoder();
       let accumulated = '';
       let buffer = '';
+      let receivedGraphOps = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -65,8 +71,16 @@ export default function useChatStream() {
                 accumulated += data.text;
                 useStore.getState().setChatStreamingText(accumulated);
               }
+              if (data.graph_ops) {
+                receivedGraphOps = data.graph_ops;
+                useStore.getState().applyGraphOperations(data.graph_ops);
+              }
               if (data.done) {
-                useStore.getState().addChatMessage({ role: 'assistant', content: accumulated });
+                useStore.getState().addChatMessage({
+                  role: 'assistant',
+                  content: accumulated,
+                  ...(receivedGraphOps ? { graphOps: receivedGraphOps } : {}),
+                });
                 useStore.getState().setChatStreamingText('');
                 useStore.getState().setChatLoading(false);
                 return;
@@ -82,7 +96,11 @@ export default function useChatStream() {
         }
       }
 
-      if (accumulated) useStore.getState().addChatMessage({ role: 'assistant', content: accumulated });
+      if (accumulated) useStore.getState().addChatMessage({
+        role: 'assistant',
+        content: accumulated,
+        ...(receivedGraphOps ? { graphOps: receivedGraphOps } : {}),
+      });
       useStore.getState().setChatStreamingText('');
       useStore.getState().setChatLoading(false);
     } catch (err) {

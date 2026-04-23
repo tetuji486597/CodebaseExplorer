@@ -60,6 +60,8 @@ Return JSON with a "concepts" array where each item has: id, beginner_explanatio
       schemaName: 'depth_mapping',
       maxTokens: synthesis.concepts.length <= 3 ? 2048 : 4096,
       model: 'fast',
+      operation: 'depth_mapping',
+      projectId,
     });
 
     // Update concepts with level explanations (batch via Promise.all)
@@ -107,6 +109,8 @@ ${edgeDescriptions}
 Concept names: ${JSON.stringify(conceptNames)}
 
 Return JSON with an "edges" array where each item has: source, target, explanation.`,
+      operation: 'depth_mapping',
+      projectId,
       schema: relationshipDepthSchema,
       schemaName: 'relationship_depth',
       maxTokens: 4096,

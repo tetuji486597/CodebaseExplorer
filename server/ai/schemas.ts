@@ -179,6 +179,99 @@ export const quizGenerationSchema = {
   required: ['questions'],
 };
 
+export const graphExpansionSchema = {
+  type: 'object',
+  properties: {
+    operations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['expand_concept', 'highlight_path', 'focus_files', 'add_edge'],
+          },
+          parent_concept_id: { type: 'string' },
+          sub_concepts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' },
+                one_liner: { type: 'string' },
+                color: { type: 'string', enum: ['teal', 'purple', 'coral', 'blue', 'amber', 'pink', 'green', 'gray'] },
+                importance: { type: 'string', enum: ['critical', 'important', 'supporting'] },
+                file_ids: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['id', 'name', 'one_liner', 'color', 'importance'],
+            },
+          },
+          sub_edges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                source: { type: 'string' },
+                target: { type: 'string' },
+                label: { type: 'string' },
+              },
+              required: ['source', 'target', 'label'],
+            },
+          },
+          path: { type: 'array', items: { type: 'string' } },
+          path_label: { type: 'string' },
+          file_ids: { type: 'array', items: { type: 'string' } },
+          concept_id: { type: 'string' },
+          source: { type: 'string' },
+          target: { type: 'string' },
+          edge_label: { type: 'string' },
+        },
+        required: ['type'],
+      },
+    },
+    auto_collapse: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+  required: ['operations', 'auto_collapse'],
+};
+
+export const subConceptGenerationSchema = {
+  type: 'object',
+  properties: {
+    sub_concepts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          one_liner: { type: 'string' },
+          color: { type: 'string', enum: ['teal', 'purple', 'coral', 'blue', 'amber', 'pink', 'green', 'gray'] },
+          importance: { type: 'string', enum: ['critical', 'important', 'supporting'] },
+          file_ids: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['id', 'name', 'one_liner', 'color', 'importance'],
+      },
+    },
+    sub_edges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          source: { type: 'string' },
+          target: { type: 'string' },
+          label: { type: 'string' },
+        },
+        required: ['source', 'target', 'label'],
+      },
+    },
+  },
+  required: ['sub_concepts', 'sub_edges'],
+};
+
 export const proactiveSeedingSchema = {
   type: 'object',
   properties: {

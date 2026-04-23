@@ -68,6 +68,7 @@ Dependencies: ${(f.depends_on || []).join(', ')}`
 async function synthesizeChunk(
   fileAnalyses: FileAnalysis[],
   framework: string,
+  projectId?: string,
 ): Promise<any> {
   const analysisText = formatAnalysisText(fileAnalyses);
   const allPaths = fileAnalyses.map((f) => f.path);
@@ -86,6 +87,8 @@ Create a concept map with 3-10 concepts (scale with complexity). Every file must
     schemaName: 'concept_synthesis',
     maxTokens: Math.min(8192, Math.max(4096, fileAnalyses.length * 200)),
     model: 'fast',
+    operation: 'concept_synthesis',
+    projectId,
   });
 }
 
@@ -102,7 +105,7 @@ export async function runConceptSynthesis(
 
   if (fileAnalyses.length <= CHUNK_THRESHOLD) {
     // Small enough for a single call
-    raw = await synthesizeChunk(fileAnalyses, framework);
+    raw = await synthesizeChunk(fileAnalyses, framework, projectId);
   } else {
     // Split into chunks, synthesize each, then merge
     const chunkSize = 50;
@@ -113,7 +116,7 @@ export async function runConceptSynthesis(
     console.log(`Splitting concept synthesis into ${chunks.length} chunks of ~${chunkSize} files`);
 
     const chunkResults = await Promise.all(
-      chunks.map((chunk) => synthesizeChunk(chunk, framework))
+      chunks.map((chunk) => synthesizeChunk(chunk, framework, projectId))
     );
 
     // Merge: collect all concepts and edges, then deduplicate with a merge pass
@@ -137,6 +140,8 @@ Summaries from chunks: ${summaries.join(' | ')}
 Return a single unified concept_synthesis result with deduplicated concepts (3-10), merged edges, a suggested_starting_concept, and a codebase_summary.`,
       schema: conceptSynthesisSchema,
       schemaName: 'concept_synthesis',
+      operation: 'concept_synthesis',
+      projectId,
       maxTokens: 8192,
       model: 'fast',
     });

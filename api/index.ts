@@ -10,6 +10,8 @@ import userStateRoutes from '../server/routes/user-state.js';
 import githubRoutes from '../server/routes/github.js';
 import curatedRoutes from '../server/routes/curated.js';
 import skillProfileRoutes from '../server/routes/skill-profile.js';
+import shareRoutes from '../server/routes/share.js';
+import cxRoutes from '../server/routes/cx.js';
 
 const app = new Hono().basePath('/api');
 
@@ -27,5 +29,7 @@ app.route('/user-state', userStateRoutes);
 app.route('/github', githubRoutes);
 app.route('/curated', curatedRoutes);
 app.route('/skill-profile', skillProfileRoutes);
+app.route('/share', shareRoutes);
+app.route('/cx', cxRoutes);
 
 export default handle(app);

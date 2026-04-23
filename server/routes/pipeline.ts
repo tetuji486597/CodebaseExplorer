@@ -66,6 +66,8 @@ app.delete('/projects/:id', async (c) => {
     supabase.from('code_chunks').delete().eq('project_id', projectId),
     supabase.from('concept_universal_map').delete().eq('project_id', projectId),
     supabase.from('user_concept_progress').delete().eq('project_id', projectId),
+    supabase.from('sub_concepts').delete().eq('project_id', projectId),
+    supabase.from('sub_concept_edges').delete().eq('project_id', projectId),
   ]);
   await Promise.all([
     supabase.from('concept_edges').delete().eq('project_id', projectId),
@@ -238,7 +240,34 @@ app.get('/:id/status', async (c) => {
 app.get('/:id/data', async (c) => {
   const projectId = c.req.param('id');
 
-  const [projectRes, conceptsRes, edgesRes, filesRes, insightsRes, userStateRes, quizStateRes] = await Promise.all([
+  // Check project visibility
+  const { data: projectMeta } = await supabase
+    .from('projects')
+    .select('visibility, user_id')
+    .eq('id', projectId)
+    .single();
+
+  if (!projectMeta) {
+    return c.json({ error: 'Project not found' }, 404);
+  }
+
+  // Private projects require the owner's auth
+  if (projectMeta.visibility === 'private') {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return c.json({ error: 'Authentication required' }, 401);
+    }
+    try {
+      const { data } = await supabase.auth.getUser(authHeader.slice(7));
+      if (!data?.user || data.user.id !== projectMeta.user_id) {
+        return c.json({ error: 'Access denied' }, 403);
+      }
+    } catch {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+  }
+
+  const [projectRes, conceptsRes, edgesRes, filesRes, insightsRes, userStateRes, quizStateRes, chatRes, subConceptsRes, subEdgesRes] = await Promise.all([
     supabase.from('projects').select('*').eq('id', projectId).single(),
     supabase.from('concepts').select('*').eq('project_id', projectId),
     supabase.from('concept_edges').select('*').eq('project_id', projectId),
@@ -246,6 +275,9 @@ app.get('/:id/data', async (c) => {
     supabase.from('insights').select('*').eq('project_id', projectId).order('priority', { ascending: false }),
     supabase.from('user_state').select('*').eq('project_id', projectId).single(),
     supabase.from('quiz_state').select('concept_key, streak, total_attempts, total_correct, next_review_position').eq('project_id', projectId),
+    supabase.from('chat_messages').select('role, content, context, source, session_id, created_at, user_id').eq('project_id', projectId).order('created_at', { ascending: true }).limit(50),
+    supabase.from('sub_concepts').select('*').eq('project_id', projectId),
+    supabase.from('sub_concept_edges').select('*').eq('project_id', projectId),
   ]);
 
   // Auto-create user_state if it doesn't exist yet
@@ -267,6 +299,49 @@ app.get('/:id/data', async (c) => {
     insights: insightsRes.data || [],
     userState,
     quizState: quizStateRes.data || [],
+    chatMessages: chatRes.data || [],
+    sub_concepts: subConceptsRes.data || [],
+    sub_concept_edges: subEdgesRes.data || [],
+  });
+});
+
+// GET /api/pipeline/:id/sub-concepts/:conceptKey - Get pre-generated sub-concepts
+app.get('/:id/sub-concepts/:conceptKey', async (c) => {
+  const projectId = c.req.param('id');
+  const conceptKey = c.req.param('conceptKey');
+
+  const [subConceptsRes, subEdgesRes] = await Promise.all([
+    supabase
+      .from('sub_concepts')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('parent_concept_key', conceptKey),
+    supabase
+      .from('sub_concept_edges')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('parent_concept_key', conceptKey),
+  ]);
+
+  const subConcepts = (subConceptsRes.data || []).map(sc => ({
+    id: sc.sub_concept_key,
+    name: sc.name,
+    one_liner: sc.one_liner,
+    color: sc.color,
+    importance: sc.importance,
+    file_ids: sc.file_ids || [],
+  }));
+
+  const subEdges = (subEdgesRes.data || []).map(se => ({
+    source: se.source_sub_key,
+    target: se.target_sub_key,
+    label: se.label,
+  }));
+
+  return c.json({
+    ready: subConcepts.length > 0,
+    sub_concepts: subConcepts,
+    sub_edges: subEdges,
   });
 });
 

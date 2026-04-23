@@ -7,6 +7,7 @@ import { runEmbedding } from './embedding.js';
 // proactiveSeeding replaced with deterministic inline sort
 import { runConceptMapping } from './conceptMapping.js';
 import { runQuizGeneration } from './quizGeneration.js';
+import { runSubConceptGeneration } from './subConceptGeneration.js';
 import { updateProgress } from './progress.js';
 
 export interface PipelineInput {
@@ -24,140 +25,175 @@ async function isCancelled(projectId: string): Promise<boolean> {
   return data?.pipeline_status === 'cancelled';
 }
 
-export async function runPipeline(projectId: string, input: PipelineInput) {
-  try {
-    const pipelineStart = Date.now();
-    await updateProgress(projectId, 0, 'Starting pipeline...', 'processing');
+export interface CorePipelineResult {
+  synthesis: any;
+  fileAnalyses: any[];
+  framework: string;
+  analysisContents: Record<string, string>;
+}
 
-    // Stage 1: File classification (happens client-side, we just store files)
-    await updateProgress(projectId, 1, 'Classifying files...');
-    const fileEntries = Object.entries(input.fileContents);
+/**
+ * Stages 1-3: File storage, analysis, and concept synthesis.
+ * Returns after concepts are ready so the caller can respond immediately.
+ */
+export async function runCorePipeline(
+  projectId: string,
+  input: PipelineInput,
+  opts?: { onProgress?: (stage: string, message: string) => void }
+): Promise<CorePipelineResult | null> {
+  const pipelineStart = Date.now();
+  const notify = opts?.onProgress || (() => {});
 
-    // Detect framework
-    const framework = detectFramework(input.fileContents);
-    const language = detectLanguage(input.fileContents);
+  await updateProgress(projectId, 0, 'Starting pipeline...', 'processing');
 
-    await supabase
-      .from('projects')
-      .update({ framework, language, file_count: fileEntries.length })
-      .eq('id', projectId);
+  // Stage 1: File classification
+  await updateProgress(projectId, 1, 'Classifying files...');
+  notify('classifying', 'Classifying files...');
+  const fileEntries = Object.entries(input.fileContents);
 
-    // Early exit: no files to process (empty zip)
-    if (fileEntries.length === 0) {
-      console.log(`Empty project ${projectId} — skipping pipeline`);
-      await supabase.from('user_state').insert({
-        project_id: projectId,
-        exploration_path: [],
-      });
-      await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
-      return;
-    }
+  const framework = detectFramework(input.fileContents);
+  const language = detectLanguage(input.fileContents);
 
-    // Store files
-    const fileRows = fileEntries.map(([path, content]) => ({
-      project_id: projectId,
-      path,
-      name: path.split('/').pop() || path,
-      content,
-      role: classifyFile(path, content),
-      importance_score: 0,
-    }));
+  await supabase
+    .from('projects')
+    .update({ framework, language, file_count: fileEntries.length })
+    .eq('id', projectId);
 
-    // Insert in batches to avoid size limits
-    for (let i = 0; i < fileRows.length; i += 50) {
-      await supabase.from('files').insert(fileRows.slice(i, i + 50));
-    }
-
-    // Check for cancellation before expensive AI stages
-    if (await isCancelled(projectId)) {
-      console.log(`Pipeline cancelled for project ${projectId} after stage 1`);
-      return;
-    }
-
-    // Filter out low-value files from AI analysis (still stored in DB above)
-    let analysisContents = filterForAnalysis(input.fileContents);
-    console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
-
-    // Cap at 100 files to keep pipeline fast — 2 batches of 50 in parallel
-    const MAX_ANALYSIS_FILES = 100;
-    if (Object.keys(analysisContents).length > MAX_ANALYSIS_FILES) {
-      console.log(`Capping analysis from ${Object.keys(analysisContents).length} to ${MAX_ANALYSIS_FILES} files`);
-      analysisContents = prioritizeFiles(analysisContents, MAX_ANALYSIS_FILES);
-    }
-
-    // Early exit: files exist but none are worth analyzing (e.g., only config/lock files)
-    if (Object.keys(analysisContents).length === 0) {
-      console.log(`No analyzable files in project ${projectId} — skipping AI stages`);
-      await supabase.from('user_state').insert({
-        project_id: projectId,
-        exploration_path: [],
-      });
-      await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
-      return;
-    }
-
-    // Stage 2: Parallel file analysis
-    await updateProgress(projectId, 2, 'Analyzing file structure and dependencies...');
-    let stageStart = Date.now();
-    const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
-    console.log(`[timing] Stage 2 (file analysis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
-
-    if (await isCancelled(projectId)) {
-      console.log(`Pipeline cancelled for project ${projectId} after stage 2`);
-      return;
-    }
-
-    // Stage 3: Concept synthesis
-    await updateProgress(projectId, 3, 'Identifying architectural concepts...');
-    stageStart = Date.now();
-    const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
-    console.log(`[timing] Stage 3 (concept synthesis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
-
-    if (await isCancelled(projectId)) {
-      console.log(`Pipeline cancelled for project ${projectId} after stage 3`);
-      return;
-    }
-
-    // Generate exploration path deterministically (no API call needed)
-    const explorationPath = synthesis.concepts
-      .sort((a, b) => {
-        const order: Record<string, number> = { critical: 0, important: 1, supporting: 2 };
-        return (order[a.importance] ?? 2) - (order[b.importance] ?? 2);
-      })
-      .map((c) => c.id);
-
-    // Use suggested starting concept if available
-    if (synthesis.suggested_starting_concept && explorationPath.includes(synthesis.suggested_starting_concept)) {
-      const idx = explorationPath.indexOf(synthesis.suggested_starting_concept);
-      explorationPath.splice(idx, 1);
-      explorationPath.unshift(synthesis.suggested_starting_concept);
-    }
-
+  if (fileEntries.length === 0) {
+    console.log(`Empty project ${projectId} — skipping pipeline`);
     await supabase.from('user_state').insert({
       project_id: projectId,
-      exploration_path: explorationPath,
+      exploration_path: [],
     });
-
-    // Mark pipeline complete — UI can load now
     await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
-    console.log(`[timing] Pipeline total: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`);
-    console.log(`Pipeline complete for project ${projectId}`);
+    return null;
+  }
 
-    // Background enrichment: depth mapping, insights, quiz, embedding, concept mapping
-    // These run after "complete" so the UI loads immediately
-    const enrichmentStart = Date.now();
-    Promise.all([
-      runDepthMapping(projectId, synthesis, fileAnalyses),
-      runInsightGeneration(projectId, synthesis, fileAnalyses),
-      runQuizGeneration(projectId, synthesis, fileAnalyses),
-      runConceptMapping(projectId),
-      runEmbedding(projectId, input.fileContents, fileAnalyses, synthesis),
-    ]).then(() => {
-      console.log(`[timing] Background enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
-      return updateProgress(projectId, 7, 'Enrichment complete', 'enriched');
-    }).catch((err) => {
-      console.error(`Background enrichment failed for project ${projectId}:`, err);
+  // Store files
+  const fileRows = fileEntries.map(([path, content]) => ({
+    project_id: projectId,
+    path,
+    name: path.split('/').pop() || path,
+    content,
+    role: classifyFile(path, content),
+    importance_score: 0,
+  }));
+
+  for (let i = 0; i < fileRows.length; i += 50) {
+    await supabase.from('files').insert(fileRows.slice(i, i + 50));
+  }
+
+  if (await isCancelled(projectId)) {
+    console.log(`Pipeline cancelled for project ${projectId} after stage 1`);
+    return null;
+  }
+
+  // Filter out low-value files from AI analysis
+  let analysisContents = filterForAnalysis(input.fileContents);
+  console.log(`Filtered ${Object.keys(input.fileContents).length} files to ${Object.keys(analysisContents).length} for analysis`);
+
+  const MAX_ANALYSIS_FILES = 100;
+  if (Object.keys(analysisContents).length > MAX_ANALYSIS_FILES) {
+    console.log(`Capping analysis from ${Object.keys(analysisContents).length} to ${MAX_ANALYSIS_FILES} files`);
+    analysisContents = prioritizeFiles(analysisContents, MAX_ANALYSIS_FILES);
+  }
+
+  if (Object.keys(analysisContents).length === 0) {
+    console.log(`No analyzable files in project ${projectId} — skipping AI stages`);
+    await supabase.from('user_state').insert({
+      project_id: projectId,
+      exploration_path: [],
     });
+    await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
+    return null;
+  }
+
+  // Stage 2: Parallel file analysis
+  await updateProgress(projectId, 2, 'Analyzing file structure and dependencies...');
+  notify('analyzing', 'Analyzing file structure...');
+  let stageStart = Date.now();
+  const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
+  console.log(`[timing] Stage 2 (file analysis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
+
+  if (await isCancelled(projectId)) {
+    console.log(`Pipeline cancelled for project ${projectId} after stage 2`);
+    return null;
+  }
+
+  // Stage 3: Concept synthesis
+  await updateProgress(projectId, 3, 'Identifying architectural concepts...');
+  notify('synthesizing', 'Synthesizing concepts...');
+  stageStart = Date.now();
+  const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
+  console.log(`[timing] Stage 3 (concept synthesis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
+
+  if (await isCancelled(projectId)) {
+    console.log(`Pipeline cancelled for project ${projectId} after stage 3`);
+    return null;
+  }
+
+  // Generate exploration path deterministically
+  const explorationPath = synthesis.concepts
+    .sort((a: any, b: any) => {
+      const order: Record<string, number> = { critical: 0, important: 1, supporting: 2 };
+      return (order[a.importance] ?? 2) - (order[b.importance] ?? 2);
+    })
+    .map((c: any) => c.id);
+
+  if (synthesis.suggested_starting_concept && explorationPath.includes(synthesis.suggested_starting_concept)) {
+    const idx = explorationPath.indexOf(synthesis.suggested_starting_concept);
+    explorationPath.splice(idx, 1);
+    explorationPath.unshift(synthesis.suggested_starting_concept);
+  }
+
+  await supabase.from('user_state').insert({
+    project_id: projectId,
+    exploration_path: explorationPath,
+  });
+
+  // Mark pipeline complete — UI can load now
+  await updateProgress(projectId, 6, 'Pipeline complete!', 'complete');
+  console.log(`[timing] Core pipeline: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`);
+  console.log(`Core pipeline complete for project ${projectId}`);
+
+  return { synthesis, fileAnalyses, framework, analysisContents };
+}
+
+/**
+ * Stages 4-7: Background enrichment (depth mapping, insights, quizzes, embeddings, concept mapping).
+ * Fire-and-forget after core pipeline completes.
+ */
+export function runEnrichment(
+  projectId: string,
+  fileContents: Record<string, string>,
+  synthesis: any,
+  fileAnalyses: any[]
+): void {
+  const enrichmentStart = Date.now();
+  Promise.all([
+    runDepthMapping(projectId, synthesis, fileAnalyses),
+    runInsightGeneration(projectId, synthesis, fileAnalyses),
+    runQuizGeneration(projectId, synthesis, fileAnalyses),
+    runConceptMapping(projectId),
+    runEmbedding(projectId, fileContents, fileAnalyses, synthesis),
+    runSubConceptGeneration(projectId, synthesis, fileAnalyses),
+  ]).then(() => {
+    console.log(`[timing] Background enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
+    return updateProgress(projectId, 7, 'Enrichment complete', 'enriched');
+  }).catch((err) => {
+    console.error(`Background enrichment failed for project ${projectId}:`, err);
+  });
+}
+
+/**
+ * Full pipeline: core + enrichment. Used by the website upload flow.
+ */
+export async function runPipeline(projectId: string, input: PipelineInput) {
+  try {
+    const result = await runCorePipeline(projectId, input);
+    if (!result) return;
+
+    runEnrichment(projectId, input.fileContents, result.synthesis, result.fileAnalyses);
   } catch (err) {
     console.error(`Pipeline failed for project ${projectId}:`, err);
     await supabase

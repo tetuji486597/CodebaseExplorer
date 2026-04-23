@@ -8,7 +8,7 @@ import { ArrowLeft } from 'lucide-react';
  *   - `label`: text next to the back arrow (default: page title or nothing).
  *   - `children`: optional right-side slot (e.g. action buttons).
  */
-export default function BackBar({ to, label, children }) {
+export default function BackBar({ to, fallback = '/upload', label, children }) {
   const navigate = useNavigate();
 
   return (
@@ -30,7 +30,11 @@ export default function BackBar({ to, label, children }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
         <button
-          onClick={() => (to ? navigate(to) : navigate(-1))}
+          onClick={() => {
+            if (to) navigate(to);
+            else if (window.history.length > 1) navigate(-1);
+            else navigate(fallback);
+          }}
           aria-label="Go back"
           style={{
             width: 32,

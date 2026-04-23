@@ -4,19 +4,37 @@ import { supabase } from '../db/supabase.js';
 import { streamClaude } from '../ai/claude.js';
 import { retrieveChunks } from '../rag/retriever.js';
 import { embed } from '../rag/embedder.js';
+import { generateGraphOps } from '../ai/graphExpansionPrompt.js';
+import { resolveSessionId } from '../lib/chatSession.js';
 
 const app = new Hono();
 
 // POST /api/chat - RAG-powered streaming chat
 app.post('/', async (c) => {
-  const { message, projectId, selectedNode, history } = await c.req.json();
+  const { message, projectId, selectedNode, history, expansionState, sessionId: clientSessionId } = await c.req.json();
+
+  // Extract user_id from auth header if present (optional for web, required for collab)
+  let userId: string | null = null;
+  const authHeader = c.req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const { data } = await supabase.auth.getUser(authHeader.slice(7));
+      userId = data?.user?.id || null;
+    } catch {}
+  }
+
+  // Resolve session
+  const sessionId = await resolveSessionId(supabase, projectId, clientSessionId);
 
   // Save user message
   await supabase.from('chat_messages').insert({
     project_id: projectId,
     role: 'user',
     content: message,
-    context: { selected_node: selectedNode },
+    user_id: userId,
+    source: 'web',
+    session_id: sessionId,
+    context: { selected_node: selectedNode, source: 'web' },
   });
 
   // Get user state for understanding levels
@@ -92,6 +110,8 @@ Rules:
       const textStream = await streamClaude({
         system: systemPrompt,
         messages: chatMessages,
+        operation: 'chat',
+        projectId,
       });
 
       for await (const text of textStream) {
@@ -99,12 +119,74 @@ Rules:
         await stream.writeSSE({ data: JSON.stringify({ text }), event: 'text' });
       }
 
+      // Generate graph expansion operations
+      let graphOps = { operations: [], auto_collapse: [] };
+      try {
+        const { data: conceptRows } = await supabase
+          .from('concepts')
+          .select('concept_key, name, importance')
+          .eq('project_id', projectId);
+
+        const { data: edgeRows } = await supabase
+          .from('concept_edges')
+          .select('source_concept_key, target_concept_key, relationship')
+          .eq('project_id', projectId);
+
+        const { data: fileRows } = await supabase
+          .from('files')
+          .select('concept_id')
+          .eq('project_id', projectId);
+
+        if (conceptRows?.length) {
+          const fileCounts: Record<string, number> = {};
+          for (const f of fileRows || []) {
+            fileCounts[f.concept_id] = (fileCounts[f.concept_id] || 0) + 1;
+          }
+
+          const conceptSummaries = conceptRows.map(c => ({
+            id: c.concept_key,
+            name: c.name,
+            importance: c.importance,
+            file_count: fileCounts[c.concept_key] || 0,
+          }));
+
+          const edgeSummaries = (edgeRows || []).map(e => ({
+            source: e.source_concept_key,
+            target: e.target_concept_key,
+            relationship: e.relationship,
+          }));
+
+          graphOps = await generateGraphOps(
+            message,
+            fullResponse,
+            conceptSummaries,
+            edgeSummaries,
+            expansionState || { expanded_concepts: [], visible_node_count: conceptRows.length },
+            projectId,
+          );
+        }
+      } catch (graphErr: unknown) {
+        console.error('[chat] Graph expansion failed (non-fatal):', graphErr);
+      }
+
+      if (graphOps.operations.length > 0) {
+        await stream.writeSSE({ data: JSON.stringify({ graph_ops: graphOps }), event: 'graph_ops' });
+      }
+
       // Save assistant message
       await supabase.from('chat_messages').insert({
         project_id: projectId,
         role: 'assistant',
         content: fullResponse,
-        context: { selected_node: selectedNode, chunks_used: chunks.length },
+        user_id: null,
+        source: 'web',
+        session_id: sessionId,
+        context: {
+          selected_node: selectedNode,
+          chunks_used: chunks.length,
+          source: 'web',
+          graph_ops: graphOps.operations.length > 0 ? graphOps : undefined,
+        },
       });
 
       await stream.writeSSE({ data: JSON.stringify({ done: true }), event: 'done' });
@@ -112,6 +194,77 @@ Rules:
       await stream.writeSSE({ data: JSON.stringify({ error: err.message }), event: 'error' });
     }
   });
+});
+
+// GET /api/chat/:projectId/history — Fetch chat messages
+app.get('/:projectId/history', async (c) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.query('sessionId');
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+
+  let query = supabase
+    .from('chat_messages')
+    .select('id, role, content, source, session_id, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+
+  if (sessionId) {
+    query = query.eq('session_id', sessionId);
+  }
+
+  const { data } = await query.limit(limit);
+  return c.json({ messages: data || [] });
+});
+
+// GET /api/chat/:projectId/sessions — List chat sessions
+app.get('/:projectId/sessions', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  const { data: messages } = await supabase
+    .from('chat_messages')
+    .select('session_id, role, content, source, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+
+  if (!messages?.length) {
+    return c.json({ sessions: [] });
+  }
+
+  const sessionMap = new Map<string, {
+    sessionId: string;
+    startedAt: string;
+    lastMessageAt: string;
+    messageCount: number;
+    sources: Set<string>;
+    preview: string;
+  }>();
+
+  for (const msg of messages) {
+    const sid = msg.session_id || 'untracked';
+    if (!sessionMap.has(sid)) {
+      sessionMap.set(sid, {
+        sessionId: sid,
+        startedAt: msg.created_at,
+        lastMessageAt: msg.created_at,
+        messageCount: 0,
+        sources: new Set(),
+        preview: '',
+      });
+    }
+    const session = sessionMap.get(sid)!;
+    session.messageCount++;
+    session.lastMessageAt = msg.created_at;
+    if (msg.source) session.sources.add(msg.source);
+    if (!session.preview && msg.role === 'user') {
+      session.preview = msg.content.slice(0, 120);
+    }
+  }
+
+  const sessions = Array.from(sessionMap.values())
+    .map(s => ({ ...s, sources: Array.from(s.sources) }))
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+
+  return c.json({ sessions });
 });
 
 export default app;

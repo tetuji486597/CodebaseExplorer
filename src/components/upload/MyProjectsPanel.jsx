@@ -59,7 +59,7 @@ export default function MyProjectsPanel() {
     try {
       const result = await fetchAndLoadProject(project.id);
       if (result) {
-        navigate('/overview', { replace: true });
+        navigate(`/explore/${project.id}`, { replace: true });
       } else {
         setLoadingId(null);
       }

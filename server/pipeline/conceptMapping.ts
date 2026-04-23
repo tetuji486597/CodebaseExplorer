@@ -60,6 +60,8 @@ export async function runConceptMapping(projectId: string) {
       schemaName: 'concept_mapping',
       model: 'fast',
       maxTokens: 2048,
+      operation: 'concept_mapping',
+      projectId,
     });
 
     // Build a name→id lookup

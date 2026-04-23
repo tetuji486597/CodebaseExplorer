@@ -12,6 +12,24 @@ import ExplorerView from './ExplorerView';
 import ComprehensionProfile from './ComprehensionProfile';
 import SettingsScreen from './SettingsScreen';
 import MyProjects from './MyProjects';
+import SharedViewer from './shared-viewer/SharedViewer';
+import CLIAuth from './CLIAuth';
+import AdminDashboard from './AdminDashboard';
+import DocsPage from './docs/DocsPage';
+import TextSelectionToolbar from './TextSelectionToolbar';
+
+function ExplorerRedirect() {
+  const pid = useStore(state => state.projectId) || localStorage.getItem('cbe_project_id');
+  return pid ? <Navigate to={`/explore/${pid}`} replace /> : <Navigate to="/" replace />;
+}
+
+const ADMIN_EMAIL = 'gordonj2016@outlook.com';
+
+function AdminGate({ children }) {
+  const user = useStore(state => state.user);
+  if (!user || user.email !== ADMIN_EMAIL) return <Navigate to="/" replace />;
+  return children;
+}
 
 export default function AppRoutes() {
   const navigate = useNavigate();
@@ -68,8 +86,9 @@ export default function AppRoutes() {
 
   // Scrollable pages vs fixed-viewport
   useEffect(() => {
-    const scrollableRoutes = ['/', '/upload', '/profile', '/overview', '/projects', '/settings'];
-    if (scrollableRoutes.includes(location.pathname)) {
+    const scrollableRoutes = ['/', '/upload', '/profile', '/overview', '/projects', '/settings', '/admin', '/docs'];
+    const isScrollable = scrollableRoutes.includes(location.pathname) && !location.pathname.startsWith('/explore/');
+    if (isScrollable) {
       document.body.classList.remove('no-scroll');
     } else {
       document.body.classList.add('no-scroll');
@@ -84,12 +103,18 @@ export default function AppRoutes() {
         <Route path="/upload" element={<UploadScreen />} />
         <Route path="/processing" element={<ProcessingScreen />} />
         <Route path="/overview" element={<BigPictureScreen />} />
-        <Route path="/explorer" element={<ExplorerView />} />
+        <Route path="/explorer" element={<ExplorerRedirect />} />
+        <Route path="/explore/:id" element={<ExplorerView />} />
         <Route path="/profile" element={<ComprehensionProfile />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/projects" element={<MyProjects />} />
+        <Route path="/s/:id" element={<SharedViewer />} />
+        <Route path="/cli-auth" element={<CLIAuth />} />
+        <Route path="/admin" element={<AdminGate><AdminDashboard /></AdminGate>} />
+        <Route path="/docs" element={<DocsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <TextSelectionToolbar />
     </div>
   );
 }

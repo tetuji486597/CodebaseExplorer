@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import 'dotenv/config';
+import { supabase } from '../db/supabase.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -8,6 +9,35 @@ const anthropic = new Anthropic({
 const MAIN_MODEL = 'claude-sonnet-4-6';
 const FAST_MODEL = 'claude-haiku-4-5-20251001';
 
+const PRICING: Record<string, { input: number; output: number }> = {
+  [MAIN_MODEL]: { input: 3 / 1_000_000, output: 15 / 1_000_000 },
+  [FAST_MODEL]: { input: 0.80 / 1_000_000, output: 4 / 1_000_000 },
+};
+
+function logUsage(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  operation?: string,
+  projectId?: string,
+): void {
+  const pricing = PRICING[model] || PRICING[MAIN_MODEL];
+  const cost = inputTokens * pricing.input + outputTokens * pricing.output;
+  supabase
+    .from('api_usage')
+    .insert({
+      project_id: projectId || null,
+      model,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cost_usd: cost,
+      operation: operation || 'unknown',
+    })
+    .then(({ error }) => {
+      if (error) console.error('[usage] Failed to log:', error.message);
+    });
+}
+
 export interface StructuredCallOptions {
   system: string;
   prompt: string;
@@ -15,6 +45,8 @@ export interface StructuredCallOptions {
   schemaName: string;
   maxTokens?: number;
   model?: 'main' | 'fast';
+  operation?: string;
+  projectId?: string;
 }
 
 export async function callClaudeStructured<T>(opts: StructuredCallOptions): Promise<T> {
@@ -43,6 +75,10 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
       const toolBlock = response.content.find((b) => b.type === 'tool_use');
       if (!toolBlock || toolBlock.type !== 'tool_use') {
         throw new Error('No tool_use response from Claude');
+      }
+
+      if (response.usage) {
+        logUsage(model, response.usage.input_tokens, response.usage.output_tokens, opts.operation, opts.projectId);
       }
 
       const input = toolBlock.input as T;
@@ -76,6 +112,8 @@ export async function streamClaude(opts: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   maxTokens?: number;
   model?: 'main' | 'fast';
+  operation?: string;
+  projectId?: string;
 }): Promise<AsyncIterable<string>> {
   const model = opts.model === 'fast' ? FAST_MODEL : MAIN_MODEL;
 
@@ -93,6 +131,12 @@ export async function streamClaude(opts: {
           yield event.delta.text;
         }
       }
+      try {
+        const finalMessage = await stream.finalMessage();
+        if (finalMessage.usage) {
+          logUsage(model, finalMessage.usage.input_tokens, finalMessage.usage.output_tokens, opts.operation, opts.projectId);
+        }
+      } catch {}
     },
   };
 }

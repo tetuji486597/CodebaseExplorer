@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { usePostHog } from '@posthog/react';
 import TopBar from './TopBar';
 import GraphCanvas from './GraphCanvas';
@@ -48,16 +48,30 @@ function Toast() {
 
 export default function ExplorerView() {
   const navigate = useNavigate();
+  const { id: urlProjectId } = useParams();
   const posthog = usePostHog();
   const concepts = useStore(s => s.concepts);
   const projectId = useStore(s => s.projectId);
   const showInspector = useStore(s => s.showInspector);
   const guidedMode = useStore(s => s.guidedMode);
+  const universeMode = useStore(s => s.universeMode);
   const chatPanelOpen = useStore(s => s.chatPanelOpen);
   const setChatPanelOpen = useStore(s => s.setChatPanelOpen);
   const setCommandPaletteOpen = useStore(s => s.setCommandPaletteOpen);
   const chatMessages = useStore(s => s.chatMessages);
   const [restoring, setRestoring] = useState(false);
+  const containerRef = useRef(null);
+
+  // Prevent browser zoom (Ctrl+scroll / pinch) anywhere in the explorer
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const prevent = (e) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    };
+    el.addEventListener('wheel', prevent, { passive: false });
+    return () => el.removeEventListener('wheel', prevent);
+  }, []);
 
   // Global Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -73,27 +87,30 @@ export default function ExplorerView() {
 
   useEffect(() => { posthog.capture('explorer_entered'); }, []);
 
-  // Restore project data on refresh (store is empty but localStorage has projectId)
+  // Load project from URL param (/explore/:id) or restore from localStorage (/explorer)
   useEffect(() => {
-    if (concepts.length > 0) return; // Already loaded
-    if (projectId) return; // Store has projectId but no concepts — let it settle
+    if (concepts.length > 0) return;
 
-    const savedId = localStorage.getItem('cbe_project_id');
-    if (!savedId) {
+    // URL-based loading (shared links, CLI-generated URLs)
+    const targetId = urlProjectId || (!projectId ? localStorage.getItem('cbe_project_id') : null);
+    if (!targetId) {
       navigate('/', { replace: true });
       return;
     }
 
+    // Skip if store already has this project loading
+    if (projectId === targetId) return;
+
     setRestoring(true);
-    useStore.getState().setProjectId(savedId);
-    fetchAndLoadProject(savedId).then(result => {
+    useStore.getState().setProjectId(targetId);
+    fetchAndLoadProject(targetId).then(result => {
       setRestoring(false);
       if (!result) {
         localStorage.removeItem('cbe_project_id');
         navigate('/', { replace: true });
       }
     });
-  }, [concepts.length, projectId, navigate]);
+  }, [concepts.length, projectId, urlProjectId, navigate]);
 
   // Activate user state tracking, proactive engine, and enrichment polling
   useUserState();
@@ -123,39 +140,41 @@ export default function ExplorerView() {
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={gridClasses}>
+    <div ref={containerRef} className={gridClasses}>
       <TopBar />
       <GraphCanvas />
-      <InspectorPanel />
-      <GuidedOverlay />
+      {!universeMode && <InspectorPanel />}
+      {!universeMode && <GuidedOverlay />}
 
       {/* Chat system */}
-      <ChatPanel />
-      <CommandPalette />
+      {!universeMode && <ChatPanel />}
+      {!universeMode && <CommandPalette />}
 
       {/* Chat FAB */}
-      <button
-        className={`chat-fab ${chatMessages.length > 0 && !chatPanelOpen ? 'chat-fab--unread' : ''}`}
-        onClick={() => {
-          if (chatPanelOpen) {
-            setChatPanelOpen(false);
-          } else if (chatMessages.length > 0) {
-            setChatPanelOpen(true);
-          } else {
-            setCommandPaletteOpen(true);
-          }
-        }}
-        aria-label="Open chat"
-      >
-        <MessageSquare size={18} strokeWidth={1.75} />
-      </button>
+      {!universeMode && (
+        <button
+          className={`chat-fab ${chatMessages.length > 0 && !chatPanelOpen ? 'chat-fab--unread' : ''}`}
+          onClick={() => {
+            if (chatPanelOpen) {
+              setChatPanelOpen(false);
+            } else if (chatMessages.length > 0) {
+              setChatPanelOpen(true);
+            } else {
+              setCommandPaletteOpen(true);
+            }
+          }}
+          aria-label="Open chat"
+        >
+          <MessageSquare size={18} strokeWidth={1.75} />
+        </button>
+      )}
 
       {/* Floating / overlay elements (above the grid) */}
-      <ExplorationProgress />
-      <InsightCard />
-      <CodePanel />
-      <Onboarding />
-      <CompletionSummary />
+      {!universeMode && <ExplorationProgress />}
+      {!universeMode && <InsightCard />}
+      {!universeMode && <CodePanel />}
+      {!universeMode && <Onboarding />}
+      {!universeMode && <CompletionSummary />}
       <Toast />
 
     </div>

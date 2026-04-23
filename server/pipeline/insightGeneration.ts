@@ -57,6 +57,8 @@ Return JSON with an "insights" array. Each insight needs: title, category (archi
       schemaName: 'insights',
       maxTokens: fileAnalyses.length <= 5 ? 2048 : 4096,
       model: 'fast',
+      operation: 'insight_generation',
+      projectId,
     });
 
     // Store insights (batch insert)

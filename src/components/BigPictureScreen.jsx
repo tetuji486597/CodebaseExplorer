@@ -55,7 +55,7 @@ function ConceptCard({ concept, index }) {
       >
         {concept.name}
       </h4>
-      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }} data-quote-source={concept.name}>
         {concept.one_liner || concept.description}
       </p>
     </div>
@@ -130,7 +130,7 @@ export default function BigPictureScreen() {
       className="w-full min-h-full overflow-y-auto flex flex-col"
       style={{ background: 'var(--color-bg-base)' }}
     >
-      <BackBar to="/upload" label={projectMeta?.name || 'Overview'} />
+      <BackBar label={projectMeta?.name || 'Overview'} />
       <div
         className="w-full flex flex-col items-center"
         style={{
@@ -169,6 +169,7 @@ export default function BigPictureScreen() {
               maxWidth: 560,
               lineHeight: 1.7,
             }}
+            data-quote-source="Project summary"
           >
             {meta.summary}
           </p>
@@ -263,7 +264,10 @@ export default function BigPictureScreen() {
 
         {/* CTA */}
         <button
-          onClick={() => navigate('/explorer', { replace: true })}
+          onClick={() => {
+            const pid = useStore.getState().projectId;
+            navigate(pid ? `/explore/${pid}` : '/explorer', { replace: true });
+          }}
           className="flex items-center gap-2 rounded-xl font-medium transition-all duration-200 active:scale-[0.97] cursor-pointer"
           style={{
             background: 'var(--color-accent)',

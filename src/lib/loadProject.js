@@ -1,5 +1,6 @@
 import useStore from '../store/useStore';
 import { API_BASE } from './api';
+import { supabase } from './supabase';
 
 function loadQuizStats(quizState) {
   if (!quizState?.length) return;
@@ -39,7 +40,13 @@ async function initQuizState(projectId, explorationPath, currentPosition) {
  */
 export async function fetchAndLoadProject(projectId) {
   try {
-    const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
+    const headers = {};
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
+    const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`, { headers });
     if (!res.ok) return null;
     const data = await res.json();
     return loadProjectData(data, projectId);
@@ -127,7 +134,50 @@ export function loadProjectData(data, projectId) {
   if (data.project) {
     store.setProjectMeta(data.project);
   }
+  if (data.sub_concepts?.length) {
+    const grouped = {};
+    data.sub_concepts.forEach(sc => {
+      if (!grouped[sc.parent_concept_key]) grouped[sc.parent_concept_key] = [];
+      grouped[sc.parent_concept_key].push({
+        id: sc.sub_concept_key, name: sc.name, one_liner: sc.one_liner,
+        color: sc.color, importance: sc.importance, file_ids: sc.file_ids || [],
+      });
+    });
+    const edgesByParent = {};
+    (data.sub_concept_edges || []).forEach(se => {
+      if (!edgesByParent[se.parent_concept_key]) edgesByParent[se.parent_concept_key] = [];
+      edgesByParent[se.parent_concept_key].push({
+        source: se.source_sub_key, target: se.target_sub_key, label: se.label,
+      });
+    });
+    const cache = {};
+    for (const key of Object.keys(grouped)) {
+      cache[key] = { subConcepts: grouped[key], subEdges: edgesByParent[key] || [], ready: true };
+    }
+    store.setSubConceptsCache(cache);
+    store.setSubConceptsReadyKeys(Object.keys(grouped));
+  }
   store.loadData({ concepts, files, conceptEdges, fileImports: [] });
+
+  // Load chat history if available (cross-platform continuity)
+  if (data.chatMessages?.length) {
+    const mapped = data.chatMessages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      source: msg.source || msg.context?.source,
+      session_id: msg.session_id,
+    }));
+    store.setChatMessages(mapped);
+
+    // Reuse most recent session if it's less than 30 min old
+    const lastMsg = data.chatMessages[data.chatMessages.length - 1];
+    if (lastMsg?.session_id) {
+      const gap = Date.now() - new Date(lastMsg.created_at).getTime();
+      if (gap < 30 * 60 * 1000) {
+        store.setChatSessionId(lastMsg.session_id);
+      }
+    }
+  }
 
   // Persist so ExplorerView can restore on refresh
   localStorage.setItem('cbe_project_id', projectId);

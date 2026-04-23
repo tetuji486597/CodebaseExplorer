@@ -26,6 +26,7 @@ const NAV_LINKS = [
   { label: 'Features', id: 'lp-features' },
   { label: 'How it works', id: 'lp-how' },
   { label: 'Pricing', id: 'lp-pricing' },
+  { label: 'Docs', route: '/docs' },
 ];
 
 const handleGitHubSignIn = async () => {
@@ -104,12 +105,23 @@ export default function NavBar({ onGetStarted, scrolled }) {
       </button>
 
       {/* Desktop links */}
-      <div className="lp-nav-desktop" style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
+      <div className="lp-nav-desktop" style={{
+        position: 'absolute',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: '2rem',
+        alignItems: 'center',
+      }}>
         {NAV_LINKS.map(link => (
           <a
-            key={link.id}
-            href={`#${link.id}`}
-            onClick={e => { e.preventDefault(); scrollTo(link.id); }}
+            key={link.label}
+            href={link.route || `#${link.id}`}
+            onClick={e => {
+              e.preventDefault();
+              if (link.route) navigate(link.route);
+              else scrollTo(link.id);
+            }}
             style={{
               color: 'var(--color-text-secondary)',
               textDecoration: 'none',
@@ -271,9 +283,13 @@ export default function NavBar({ onGetStarted, scrolled }) {
           >
             {NAV_LINKS.map(link => (
               <a
-                key={link.id}
-                href={`#${link.id}`}
-                onClick={e => { e.preventDefault(); scrollTo(link.id); }}
+                key={link.label}
+                href={link.route || `#${link.id}`}
+                onClick={e => {
+                  e.preventDefault();
+                  if (link.route) { setMobileOpen(false); navigate(link.route); }
+                  else scrollTo(link.id);
+                }}
                 style={{
                   color: 'var(--color-text-secondary)',
                   textDecoration: 'none',

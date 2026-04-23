@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { ArrowLeft, Circle, Layers, Server, Database, Settings } from 'lucide-react';
+import { Circle, Layers, Server, Database, Settings } from 'lucide-react';
 import { API_BASE } from '../lib/api';
+import BackBar from './BackBar';
 
 const CATEGORY_CONFIG = {
   frontend: { label: 'Frontend', Icon: Layers, color: 'var(--color-accent)' },
@@ -70,7 +70,6 @@ function ConceptCard({ concept }) {
 }
 
 export default function SkillProfile() {
-  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -95,29 +94,9 @@ export default function SkillProfile() {
 
   return (
     <div className="w-full min-h-full overflow-y-auto" style={{ background: 'var(--color-bg-base)' }}>
-      {/* Header */}
-      <div
-        className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3.5"
-        style={{
-          background: 'var(--color-bg-elevated)',
-          backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid var(--color-border-subtle)',
-        }}
-      >
-        <button
-          onClick={() => navigate(-1)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200"
-          style={{ color: 'var(--color-text-tertiary)', background: 'var(--color-bg-sunken)' }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-border-visible)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-bg-sunken)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <span className="font-heading text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Comprehension Profile
-        </span>
+      <BackBar label="Comprehension Profile">
         {totalConcepts > 0 && (
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full ml-2" style={{
+          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{
             background: 'var(--color-accent-soft)',
             color: 'var(--color-accent-active)',
             border: '1px solid var(--color-border-strong)',
@@ -125,7 +104,7 @@ export default function SkillProfile() {
             {totalEncountered}/{totalConcepts} concepts encountered
           </span>
         )}
-      </div>
+      </BackBar>
 
       {/* Content */}
       <div className="max-w-4xl mx-auto px-5 py-8">

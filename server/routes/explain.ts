@@ -104,6 +104,8 @@ ${ch.content}
   return streamSSE(c, async (stream) => {
     try {
       const textStream = await streamClaude({
+        operation: 'explain',
+        projectId,
         system: `You are explaining code to a CS student. Use register ${level === 'beginner' ? '0 (zero assumed knowledge): explain from first principles, no jargon, use analogies to everyday things' : level === 'intermediate' ? '1 (some familiarity): use correct terminology without defining basic concepts, explain how things are implemented here' : '2 (comfortable): go straight to implementation specifics, interesting decisions, and things worth watching out for'}.
 Reference specific files from the provided code.
 Never make up code that doesn't exist in the codebase.

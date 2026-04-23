@@ -75,6 +75,8 @@ export async function runQuizGeneration(
     try {
       const result = await callClaudeStructured<{ questions: QuizQuestion[] }>({
         system: QUIZ_SYSTEM_PROMPT,
+        operation: 'quiz_generation',
+        projectId,
         prompt: `Generate quiz questions for each concept in this codebase:
 
 CONCEPTS:

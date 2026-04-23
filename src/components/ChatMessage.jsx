@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import useStore from '../store/useStore';
-import { FileCode2, Box, Route, ExternalLink } from 'lucide-react';
+import { FileCode2, Box, Route, ExternalLink, GitBranch } from 'lucide-react';
 import CS_GLOSSARY from '../data/csGlossary';
 
 // ─── Glossary tooltip (reuses KeywordHighlighter pattern) ────────────────────
@@ -729,6 +729,7 @@ export default function ChatMessage({ message, isStreaming }) {
 
   return (
     <div
+      data-quote-source={isUser ? undefined : "Chat response"}
       style={{
         padding: isUser ? '10px 14px' : '12px 14px',
         borderRadius: 'var(--radius-md)',
@@ -741,6 +742,26 @@ export default function ChatMessage({ message, isStreaming }) {
         paddingLeft: isUser ? 14 : 16,
       }}
     >
+      {message.source && (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 3,
+          fontSize: 9,
+          fontWeight: 600,
+          padding: '1px 5px',
+          borderRadius: 3,
+          marginBottom: 4,
+          background: message.source === 'cli' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+          color: message.source === 'cli' ? '#f59e0b' : '#818cf8',
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          float: 'right',
+          marginLeft: 8,
+        }}>
+          {message.source === 'cli' ? 'CLI' : 'WEB'}
+        </span>
+      )}
       {isUser ? (
         message.content
       ) : (
@@ -757,6 +778,37 @@ export default function ChatMessage({ message, isStreaming }) {
               animation: 'processing-dot 1s infinite',
               verticalAlign: 'text-bottom',
             }} />
+          )}
+          {message.graphOps && message.graphOps.operations?.length > 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-full)',
+                background: 'var(--color-accent-soft)',
+                border: '1px solid var(--color-border-subtle)',
+                fontSize: 11,
+                color: 'var(--color-accent-active)',
+                cursor: 'pointer',
+                transition: 'background 150ms ease-out',
+              }}
+              onClick={() => {
+                const store = useStore.getState();
+                store.applyGraphOperations(message.graphOps);
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--color-accent-hover)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--color-accent-soft)';
+              }}
+            >
+              <GitBranch size={12} strokeWidth={1.5} />
+              Graph updated
+            </div>
           )}
         </>
       )}
