@@ -58,7 +58,7 @@ app.post('/pipeline', requireAuth, async (c) => {
             await supabase.from('projects').update({ share_slug: slug }).eq('id', cachedId);
           }
 
-          const shareUrl = `https://codebaseexplorer.vercel.app/explore/${cachedId}`;
+          const shareUrl = `https://codebase-explorer-five.vercel.app/explore/${cachedId}`;
           await stream.writeSSE({ data: JSON.stringify({
             stage: 'complete',
             shareUrl,
@@ -116,7 +116,7 @@ app.post('/pipeline', requireAuth, async (c) => {
       });
 
       if (!coreResult) {
-        const shareUrl = `https://codebaseexplorer.vercel.app/explore/${projectId}`;
+        const shareUrl = `https://codebase-explorer-five.vercel.app/explore/${projectId}`;
         await stream.writeSSE({ data: JSON.stringify({
           stage: 'complete',
           shareUrl,
@@ -127,7 +127,7 @@ app.post('/pipeline', requireAuth, async (c) => {
       }
 
       const { synthesis, fileAnalyses } = coreResult;
-      const shareUrl = `https://codebaseexplorer.vercel.app/explore/${projectId}`;
+      const shareUrl = `https://codebase-explorer-five.vercel.app/explore/${projectId}`;
 
       await stream.writeSSE({ data: JSON.stringify({
         stage: 'synthesized',
