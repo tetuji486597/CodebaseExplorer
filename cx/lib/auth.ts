@@ -81,21 +81,7 @@ export function login(): Promise<void> {
           });
 
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(`
-            <html>
-            <head><style>
-              body { font-family: 'DM Sans', system-ui, sans-serif; background: #0a0a14; color: #e2e8f0;
-                     display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-              .card { text-align: center; }
-              h1 { color: #6366f1; font-size: 24px; margin-bottom: 8px; }
-              p { color: #94a3b8; font-size: 14px; }
-            </style></head>
-            <body><div class="card">
-              <h1>You're in</h1>
-              <p>Return to your terminal and run a query to get started.</p>
-            </div></body>
-            </html>
-          `);
+          res.end(buildSuccessPage());
 
           server.close();
           console.log('\n  Authenticated successfully.\n');
@@ -135,4 +121,175 @@ export function login(): Promise<void> {
       reject(new Error('Login timed out'));
     }, 120_000);
   });
+}
+
+function buildSuccessPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authenticated — Codebase Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:ital,opsz,wght@1,9..144,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg-base: #F3EEEA;
+    --bg-surface: #EAE3DE;
+    --text-primary: #2D3A37;
+    --text-secondary: #586F6B;
+    --text-tertiary: #8A9691;
+    --accent: #7F9183;
+    --accent-soft: #DDE3DC;
+    --border-subtle: #DDD5D0;
+    --shadow: 0 6px 16px rgba(88, 111, 107, 0.08);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-base: #1E2423;
+      --bg-surface: #242B29;
+      --text-primary: #E8E2DD;
+      --text-secondary: #B8B8AA;
+      --text-tertiary: #7F9183;
+      --accent: #A8C4A4;
+      --accent-soft: #2F3A37;
+      --border-subtle: #3A413F;
+      --shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+    }
+  }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border-subtle) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: 0.4;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  }
+  .glow {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .card {
+    position: relative;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+    padding: 48px 44px;
+    text-align: center;
+    max-width: 420px;
+    width: calc(100% - 2rem);
+    box-shadow: var(--shadow);
+    animation: card-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .icon-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px; height: 52px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-subtle);
+    margin-bottom: 20px;
+    animation: icon-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s both;
+  }
+  @keyframes icon-in {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .icon-badge svg { color: var(--accent); }
+  h1 {
+    font-family: 'Inter', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+    animation: text-in 0.4s ease 0.25s both;
+  }
+  h1 em {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .desc {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 0;
+    animation: text-in 0.4s ease 0.35s both;
+  }
+  @keyframes text-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .terminal {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-subtle);
+    animation: text-in 0.6s ease 0.5s both;
+  }
+  .terminal .dollar { color: var(--accent); font-weight: 500; }
+  .terminal .cmd { color: var(--text-tertiary); }
+  .terminal .cursor {
+    display: inline-block;
+    margin-left: 2px;
+    color: var(--accent);
+    font-weight: 600;
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+</style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="glow"></div>
+  <div class="card">
+    <div class="icon-badge">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="m9 12 2 2 4-4"/>
+      </svg>
+    </div>
+    <h1>You're <em>in</em></h1>
+    <p class="desc">Return to your terminal to get started.</p>
+    <div class="terminal">
+      <span class="dollar">$</span>
+      <span class="cmd">&nbsp;gui "how does auth work?"</span>
+      <span class="cursor">_</span>
+    </div>
+  </div>
+</body>
+</html>`;
 }
