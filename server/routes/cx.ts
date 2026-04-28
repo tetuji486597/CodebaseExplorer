@@ -12,7 +12,8 @@ import { generateGraphOps } from '../ai/graphExpansionPrompt.js';
 import { resolveSessionId } from '../lib/chatSession.js';
 import crypto from 'crypto';
 
-const app = new Hono();
+type Env = { Variables: { userId: string } };
+const app = new Hono<Env>();
 
 function nanoid(size = 10): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
