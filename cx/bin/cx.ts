@@ -3,7 +3,7 @@ import { readLocalRepo } from '../lib/fileReader.js';
 import { existsSync } from 'fs';
 import { config } from 'dotenv';
 import { exec } from 'child_process';
-import { login, getToken, clearCredentials, getApiBase } from '../lib/auth.js';
+import { login, getToken, clearCredentials, getApiBase, getWebBase } from '../lib/auth.js';
 import { saveProject, getProjectForRepo, listProjects } from '../lib/projects.js';
 import { sendChatMessage, interactiveChat, fetchSessions, fetchSessionMessages } from '../lib/chat.js';
 import { renderConceptMap, renderAnswer, renderShareLink, renderFollowUpHint, ansi, type ConceptData, type EdgeData } from '../lib/display.js';
@@ -79,7 +79,7 @@ if (subcommand === 'login') {
     console.error('\n  No project found for this directory.\n');
     process.exit(1);
   }
-  const url = `https://codebase-explorer-five.vercel.app/explore/${cached.projectId}`;
+  const url = `${getWebBase()}/explore/${cached.projectId}`;
   console.log(`\n  ${url}\n`);
   openBrowser(url);
   process.exit(0);
@@ -91,7 +91,7 @@ if (subcommand === 'login') {
       console.error('\n  No project found for this directory.\n');
       process.exit(1);
     }
-    const url = `https://codebase-explorer-five.vercel.app/explore/${cached.projectId}`;
+    const url = `${getWebBase()}/explore/${cached.projectId}`;
     console.log(`\n  Share link: ${url}\n`);
     process.exit(0);
   });
@@ -240,7 +240,7 @@ async function followUpChat(
 
   console.log(`\n  ${ansi.bold}gui${ansi.reset}  ${ansi.dim}following up on ${repoName}${ansi.reset}`);
   await sendChatMessage(cached.projectId, query, token);
-  const mapUrl = `${apiBase.includes('localhost') ? apiBase : 'https://codebase-explorer-five.vercel.app'}/explore/${cached.projectId}`;
+  const mapUrl = `${getWebBase()}/explore/${cached.projectId}`;
   console.log(renderShareLink(mapUrl));
   console.log(renderFollowUpHint());
 }
@@ -349,7 +349,7 @@ async function analyzePipeline(repoDir: string, token: string): Promise<string> 
   }
 
   if (!shareUrl && projectId) {
-    shareUrl = `https://codebase-explorer-five.vercel.app/explore/${projectId}`;
+    shareUrl = `${getWebBase()}/explore/${projectId}`;
   }
 
   if (projectId) {

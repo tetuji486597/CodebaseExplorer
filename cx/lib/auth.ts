@@ -13,7 +13,11 @@ interface Credentials {
 }
 
 export function getApiBase(): string {
-  return process.env.CX_API_URL || 'https://codebase-explorer-five.vercel.app';
+  return process.env.CX_API_URL || 'https://codebase-explorer-api.onrender.com';
+}
+
+export function getWebBase(): string {
+  return process.env.CX_WEB_URL || 'https://codebase-explorer-five.vercel.app';
 }
 
 export function isLoggedIn(): boolean {
@@ -108,7 +112,7 @@ export function login(): Promise<void> {
         return;
       }
       const port = addr.port;
-      const authUrl = `${getApiBase()}/cli-auth?port=${port}`;
+      const authUrl = `${getWebBase()}/cli-auth?port=${port}`;
 
       console.log(`\n  Opening browser to log in...`);
       console.log(`  If it doesn't open, visit: ${authUrl}\n`);
