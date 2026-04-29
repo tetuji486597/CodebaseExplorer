@@ -13,7 +13,7 @@ interface Credentials {
 }
 
 export function getApiBase(): string {
-  return process.env.CX_API_URL || 'https://codebase-explorer-api.onrender.com';
+  return process.env.CX_API_URL || 'https://codebaseexplorer.onrender.com';
 }
 
 export function getWebBase(): string {

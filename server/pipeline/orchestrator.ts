@@ -39,7 +39,7 @@ export interface CorePipelineResult {
 export async function runCorePipeline(
   projectId: string,
   input: PipelineInput,
-  opts?: { onProgress?: (stage: string, message: string) => void }
+  opts?: { onProgress?: (stage: string, message: string, detail?: { current?: number; total?: number; file?: string }) => void }
 ): Promise<CorePipelineResult | null> {
   const pipelineStart = Date.now();
   const notify = opts?.onProgress || (() => {});
@@ -48,8 +48,8 @@ export async function runCorePipeline(
 
   // Stage 1: File classification
   await updateProgress(projectId, 1, 'Classifying files...');
-  notify('classifying', 'Classifying files...');
   const fileEntries = Object.entries(input.fileContents);
+  notify('classifying', 'Classifying files...', { total: fileEntries.length });
 
   const framework = detectFramework(input.fileContents);
   const language = detectLanguage(input.fileContents);
@@ -110,9 +110,12 @@ export async function runCorePipeline(
 
   // Stage 2: Parallel file analysis
   await updateProgress(projectId, 2, 'Analyzing file structure and dependencies...');
-  notify('analyzing', 'Analyzing file structure...');
+  const analysisTotal = Object.keys(analysisContents).length;
+  notify('analyzing', `Analyzing ${analysisTotal} files...`, { total: analysisTotal, current: 0 });
   let stageStart = Date.now();
-  const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree);
+  const fileAnalyses = await runFileAnalysis(projectId, analysisContents, framework, input.fileTree, (current, file) => {
+    notify('analyzing_progress', `Analyzing files...`, { current, total: analysisTotal, file });
+  });
   console.log(`[timing] Stage 2 (file analysis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);
 
   if (await isCancelled(projectId)) {
@@ -122,7 +125,7 @@ export async function runCorePipeline(
 
   // Stage 3: Concept synthesis
   await updateProgress(projectId, 3, 'Identifying architectural concepts...');
-  notify('synthesizing', 'Synthesizing concepts...');
+  notify('synthesizing', 'Synthesizing concepts...', { current: analysisTotal, total: analysisTotal });
   stageStart = Date.now();
   const synthesis = await runConceptSynthesis(projectId, fileAnalyses, input.fileTree, framework);
   console.log(`[timing] Stage 3 (concept synthesis): ${((Date.now() - stageStart) / 1000).toFixed(1)}s`);

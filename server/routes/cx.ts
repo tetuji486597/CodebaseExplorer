@@ -110,8 +110,8 @@ app.post('/pipeline', requireAuth, async (c) => {
         fileContents: files,
         importEdges: [],
       }, {
-        onProgress: (stage, message) => {
-          stream.writeSSE({ data: JSON.stringify({ stage, message }) }).catch(() => {});
+        onProgress: (stage, message, detail) => {
+          stream.writeSSE({ data: JSON.stringify({ stage, message, ...detail }) }).catch(() => {});
         },
       });
 

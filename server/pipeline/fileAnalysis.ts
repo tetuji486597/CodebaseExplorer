@@ -19,6 +19,7 @@ export async function runFileAnalysis(
   fileContents: Record<string, string>,
   framework: string,
   fileTree: any,
+  onFileProgress?: (completed: number, lastFile: string) => void,
 ): Promise<FileAnalysis[]> {
   const allFiles = Object.entries(fileContents);
   const allAnalyses: FileAnalysis[] = [];
@@ -78,6 +79,9 @@ export async function runFileAnalysis(
       }));
     } finally {
       completedBatches++;
+      const filesCompleted = Math.min(completedBatches * batchSize, allFiles.length);
+      const lastFile = batch[batch.length - 1]?.[0] || '';
+      onFileProgress?.(filesCompleted, lastFile.split('/').pop() || lastFile);
       await updateProgress(projectId, 2, `Analyzing files (${completedBatches}/${batches.length})...`, undefined, {
         batch: completedBatches,
         totalBatches: batches.length,

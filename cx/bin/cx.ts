@@ -308,30 +308,35 @@ async function analyzePipeline(repoDir: string, token: string): Promise<string> 
         const event = JSON.parse(line.slice(6));
 
         if (event.stage === 'classifying') {
-          process.stdout.write(`  ${ansi.dim}Classifying...${ansi.reset}`);
+          renderProgress('Classifying', 0, event.total || 0);
         } else if (event.stage === 'analyzing') {
-          console.log(` ${ansi.green}done${ansi.reset}`);
-          process.stdout.write(`  ${ansi.dim}Analyzing...${ansi.reset}`);
+          clearProgress();
+          renderProgress('Analyzing', 0, event.total || 0);
+        } else if (event.stage === 'analyzing_progress') {
+          renderProgress('Analyzing', event.current || 0, event.total || 0, event.file);
         } else if (event.stage === 'synthesizing') {
-          console.log(` ${ansi.green}done${ansi.reset}`);
-          process.stdout.write(`  ${ansi.dim}Synthesizing...${ansi.reset}`);
+          clearProgress();
+          renderProgress('Synthesizing', 0, 1);
         } else if (event.stage === 'synthesized') {
-          console.log(` ${ansi.green}done${ansi.reset}`);
+          clearProgress();
+          console.log(`  ${ansi.green}\u2713${ansi.reset} ${ansi.dim}Analysis complete${ansi.reset}`);
           shareUrl = event.shareUrl || shareUrl;
           projectId = event.projectId || projectId;
           if (event.concepts) concepts = event.concepts;
           if (event.edges) edges = event.edges;
         } else if (event.stage === 'answering') {
-          // silent
+          renderProgress('Generating answer', 0, 1);
         } else if (event.stage === 'answer_chunk') {
           answerText += event.text;
         } else if (event.stage === 'complete') {
+          clearProgress();
           shareUrl = event.shareUrl || shareUrl;
           projectId = event.projectId || projectId;
           if (event.cached) {
             console.log(`  ${ansi.dim}Using cached analysis.${ansi.reset}`);
           }
         } else if (event.stage === 'error') {
+          clearProgress();
           throw new Error(event.message);
         }
       } catch (e: any) {
@@ -382,6 +387,21 @@ async function analyzeAndChat(repoDir: string, query: string, token: string) {
   console.log(`\n  ${ansi.dim}Asking: ${query}${ansi.reset}\n`);
   await sendChatMessage(projectId, query, token);
   console.log(renderFollowUpHint());
+}
+
+function renderProgress(label: string, current: number, total: number, file?: string) {
+  const width = 24;
+  const pct = total > 0 ? Math.min(current / total, 1) : 0;
+  const filled = Math.round(pct * width);
+  const bar = ansi.green + '\u2588'.repeat(filled) + ansi.reset + ansi.dim + '\u2591'.repeat(width - filled) + ansi.reset;
+  const pctStr = total > 0 ? ` ${Math.round(pct * 100)}%` : '';
+  const detail = current > 0 && total > 0 ? ` ${ansi.dim}(${current}/${total})${ansi.reset}` : '';
+  const fileHint = file ? ` ${ansi.dim}${file}${ansi.reset}` : '';
+  process.stdout.write(`\r  ${label} ${bar}${pctStr}${detail}${fileHint}${''.padEnd(20)}`);
+}
+
+function clearProgress() {
+  process.stdout.write(`\r${''.padEnd(100)}\r`);
 }
 
 function openBrowser(url: string) {
