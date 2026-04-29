@@ -41,14 +41,19 @@ export default function CLIAuth() {
     return () => subscription.unsubscribe();
   }, [port]);
 
-  function redirectToCLI(session, callbackPort) {
+  async function redirectToCLI(session, callbackPort) {
     setStatus('redirecting');
     const params = new URLSearchParams({
       access_token: session.access_token,
       refresh_token: session.refresh_token || '',
       expires_in: String(session.expires_in || 3600),
     });
-    window.location.href = `http://localhost:${callbackPort}/callback?${params}`;
+    try {
+      await fetch(`http://localhost:${callbackPort}/callback?${params}`);
+      setStatus('done');
+    } catch {
+      setStatus('done');
+    }
   }
 
   async function handleGitHubLogin() {
@@ -160,9 +165,28 @@ export default function CLIAuth() {
           )}
 
           {status === 'redirecting' && (
-            <StatusMessage key="redirecting" icon={<CheckCircle size={16} color="var(--color-success)" />} color="var(--color-success)">
-              Authenticated. Returning to terminal...
+            <StatusMessage key="redirecting" icon={<Loader2 size={16} style={{ animation: 'cli-auth-spin 1s linear infinite' }} />}>
+              Sending credentials to terminal...
             </StatusMessage>
+          )}
+
+          {status === 'done' && (
+            <motion.div
+              key="done"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.3 }}
+              style={{ padding: '20px 0' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+                <CheckCircle size={16} color="var(--color-success)" />
+                <span style={{ fontSize: 14, color: 'var(--color-success)' }}>Authenticated successfully</span>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+                You can close this tab and return to your terminal.
+              </p>
+            </motion.div>
           )}
 
           {status === 'error' && (
