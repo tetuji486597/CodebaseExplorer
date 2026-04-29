@@ -166,16 +166,8 @@ const useStore = create((set, get) => ({
     get().resetProject();
   },
 
-  // Proactive UI state
-  pulsingNodeId: null,
-  setPulsingNodeId: (id) => set({ pulsingNodeId: id }),
-  insightCard: null, // { id, title, summary, detail, category }
+  insightCard: null,
   setInsightCard: (card) => set({ insightCard: card }),
-  connectionHighlight: null,
-  setConnectionHighlight: (id) => set({ connectionHighlight: id }),
-  suggestionBanner: null,
-  suggestionBannerAction: null, // { action, target_id }
-  setSuggestionBanner: (text, action) => set({ suggestionBanner: text, suggestionBannerAction: action || null }),
   explorationProgress: 0,
   setExplorationProgress: (progress) => set({ explorationProgress: progress }),
 
@@ -513,8 +505,7 @@ const useStore = create((set, get) => ({
     guidedMode: false, guidedPosition: 0, explorationPath: [],
     exploredConcepts: new Set(),
     explorationProgress: 0, userState: null,
-    insightCard: null, pulsingNodeId: null, connectionHighlight: null,
-    suggestionBanner: null, suggestionBannerAction: null, insights: [],
+    insightCard: null, insights: [],
     quizGateActive: false, quizGateQuestions: [], quizGateType: null,
     quizCurrentIndex: 0, quizAnswers: [], quizStats: {},
     curatedCodebaseId: null,

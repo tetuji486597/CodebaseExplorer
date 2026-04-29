@@ -1,8 +1,13 @@
 import { useRef, useEffect, useState, useCallback, useMemo, useLayoutEffect } from 'react';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
-import { layoutSwimLanes, routeOrthogonalEdge, pathFromPoints } from '../utils/graphLayout';
+import { layoutSwimLanes, routeAllEdges, pathFromPoints } from '../utils/graphLayout';
 import { graphViewport } from '../lib/graphViewport';
+
+const AUTO_EXPAND_DIAMETER = 120;
+const AUTO_COLLAPSE_DIAMETER = 40;
+const AUTO_EXPAND_CENTER_TOLERANCE = 96;
+const NODE_FOCUS_SCALE = 2.15;
 
 // ---------------------------------------------------------------------------
 // useViewport — buttery-smooth pan/zoom with clamping + momentum
@@ -127,10 +132,8 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
     const sy = e.clientY - rect.top;
     if (e.ctrlKey || e.metaKey) {
       zoomAt(sx, sy, Math.exp(-e.deltaY * 0.01));
-    } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.5 || e.shiftKey) {
-      panBy(-e.deltaX, -e.deltaY);
     } else {
-      zoomAt(sx, sy, Math.exp(-e.deltaY * 0.002));
+      panBy(-e.deltaX, -e.deltaY);
     }
   }, [zoomAt, panBy]);
 
@@ -198,23 +201,37 @@ function SwimLaneBackground({ lanes, contentBox }) {
     <g>
       {lanes.map((l) => {
         const color = CONCEPT_COLORS[l.color];
+        const accent = color?.accent || '#857D6A';
+        const labelX = 28;
+        const labelCY = l.y + l.height / 2;
+        const labelText = l.label.toUpperCase();
+        const pillW = labelText.length * 8.5 + 16;
+        const pillH = 22;
         return (
           <g key={l.key}>
             <rect
-              x={40} y={l.y}
-              width={contentBox.w - 80} height={l.height}
-              fill={color?.accent || '#857D6A'} fillOpacity={0.05}
-              stroke={color?.accent || '#857D6A'} strokeOpacity={0.18} strokeWidth={1}
+              x={60} y={l.y}
+              width={contentBox.w - 100} height={l.height}
+              fill={accent} fillOpacity={0.05}
+              stroke={accent} strokeOpacity={0.18} strokeWidth={1}
               strokeDasharray="2 4" rx={12}
             />
-            <text
-              x={56} y={l.y + 22}
-              dominantBaseline="hanging" textAnchor="start"
-              className="sl-lane-label"
-              style={{ fill: color?.accent || '#857D6A' }}
-            >
-              {l.label.toUpperCase()}
-            </text>
+            {/* Rotated lane label on left margin */}
+            <g transform={`translate(${labelX},${labelCY}) rotate(-90)`}>
+              <rect
+                x={-pillW / 2} y={-pillH / 2}
+                width={pillW} height={pillH}
+                rx={11} fill={accent} fillOpacity={0.12}
+              />
+              <text
+                x={0} y={1}
+                textAnchor="middle" dominantBaseline="central"
+                className="sl-lane-label"
+                style={{ fill: accent }}
+              >
+                {labelText}
+              </text>
+            </g>
           </g>
         );
       })}
@@ -225,16 +242,17 @@ function SwimLaneBackground({ lanes, contentBox }) {
 // ---------------------------------------------------------------------------
 // Edge — orthogonal with rounded corners, animated dash when highlighted
 // ---------------------------------------------------------------------------
-function Edge({ a, b, label, color, highlight, dimmed, showLabel, time, scale }) {
+function Edge({ a, b, points, label, color, highlight, dimmed, showLabel, time, scale }) {
   const d = useMemo(() => {
-    const pts = routeOrthogonalEdge(a, b);
-    return pathFromPoints(pts, 14);
-  }, [a.x, a.y, a.r, b.x, b.y, b.r]);
+    return pathFromPoints(points, 14);
+  }, [points]);
 
   const opacity = dimmed ? 0.08 : highlight ? 0.78 : 0.22;
   const strokeW = highlight ? 2 : 1.2;
-  const midX = (a.x + b.x) / 2;
-  const midY = (a.y + b.y) / 2;
+  // Place label at the middle segment of the routed path
+  const midIdx = Math.floor(points.length / 2);
+  const midX = (points[Math.max(0, midIdx - 1)].x + points[midIdx].x) / 2;
+  const midY = (points[Math.max(0, midIdx - 1)].y + points[midIdx].y) / 2;
   const dashOffset = highlight ? -(time / 40) : 0;
 
   return (
@@ -276,8 +294,8 @@ function Edge({ a, b, label, color, highlight, dimmed, showLabel, time, scale })
 // Node — circle with badges, label, pulse, selection glow
 // ---------------------------------------------------------------------------
 function NodeCircle({
-  node, selected, dimmed, isNext, isExpanded, time, scale,
-  onClick, onDoubleClick, showOrder, showFileCount, hasSubs,
+  node, selected, dimmed, isNext, time,
+  onClick, onDoubleClick, showOrder, showFileCount,
 }) {
   const colors = CONCEPT_COLORS[node.color] || CONCEPT_COLORS.gray;
   const r = node.r;
@@ -289,6 +307,7 @@ function NodeCircle({
   return (
     <g
       className="sl-node"
+      data-node-id={node.id}
       transform={`translate(${node.x},${node.y})`}
       style={{ opacity }}
       onClick={onClick}
@@ -341,15 +360,6 @@ function NodeCircle({
         </g>
       )}
 
-      {/* Expand indicator */}
-      {hasSubs && !isExpanded && (
-        <g transform={`translate(${drawR - 4}, ${drawR - 4})`}>
-          <circle r={10} fill="var(--sl-bg)" stroke={colors.accent} strokeWidth={1.5} />
-          <line x1={-4} y1={0} x2={4} y2={0} stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" />
-          <line x1={0} y1={-4} x2={0} y2={4} stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" />
-        </g>
-      )}
-
       {/* Name label below */}
       <text
         y={drawR + 20} textAnchor="middle"
@@ -370,12 +380,40 @@ function NodeCircle({
 }
 
 // ---------------------------------------------------------------------------
+// FileNode — small circle for file view
+// ---------------------------------------------------------------------------
+function FileNode({ file, x, y, r, color, selected, dimmed, onClick }) {
+  const colors = CONCEPT_COLORS[color] || CONCEPT_COLORS.gray;
+  const opacity = dimmed ? 0.25 : 1;
+  const ext = file.name?.split('.').pop() || '';
+  return (
+    <g
+      data-file-id={file.id}
+      transform={`translate(${x},${y})`}
+      style={{ opacity, cursor: 'pointer' }}
+      onClick={onClick}
+    >
+      {selected && (
+        <circle r={r + 4} fill="none" stroke={colors.accent} strokeOpacity={0.4} strokeWidth={2} />
+      )}
+      <circle r={r} fill={colors.fill} stroke={colors.accent} strokeWidth={selected ? 2 : 1} />
+      <text y={r + 12} textAnchor="middle" className="sl-edge-label" style={{ fill: colors.text, fontSize: 9 }}>
+        {file.name?.length > 18 ? file.name.slice(0, 16) + '…' : file.name}
+      </text>
+      <text y={1} textAnchor="middle" style={{ fill: colors.accent, fontSize: 7, fontFamily: 'monospace', fontWeight: 600, pointerEvents: 'none' }}>
+        {ext}
+      </text>
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ViewportControls
 // ---------------------------------------------------------------------------
 function ViewportControls({ scale, minScale, maxScale, onFit, onZoomIn, onZoomOut }) {
   const pct = Math.round(((scale - minScale) / (maxScale - minScale)) * 100);
   return (
-    <div className="sl-viewport-controls">
+    <div className="sl-viewport-controls" onPointerDown={e => e.stopPropagation()}>
       <button onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -414,11 +452,13 @@ export default function GraphCanvas() {
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
 
   const {
-    concepts, conceptEdges,
+    concepts, conceptEdges, files,
+    viewMode,
     selectedNode, setSelectedNode, clearSelection, setShowInspector,
-    pulsingNodeId, exploredConcepts, markConceptExplored,
+    exploredConcepts, markConceptExplored,
     expansions, fetchSubConcepts, collapseConcept,
     universeMode, setUniverseMode,
+    subConceptsReadyKeys,
   } = useStore();
 
   // Immediately exit universe mode — swim lanes don't use it
@@ -563,6 +603,32 @@ export default function GraphCanvas() {
     return layoutSwimLanes(allConcepts, edges, viewSize.w, viewSize.h);
   }, [allConcepts, conceptEdges, viewSize]);
 
+  // File node positions — small circles arrayed around their parent concept
+  const fileNodes = useMemo(() => {
+    if (viewMode !== 'files' || !layout.nodes.length || !files.length) return [];
+    const result = [];
+    layout.nodes.forEach(parent => {
+      const pFiles = files.filter(f => f.conceptId === parent.id);
+      if (!pFiles.length) return;
+      const fileR = 10;
+      const orbitR = parent.r + fileR + 8;
+      const arcStart = -Math.PI / 2;
+      const arcSpan = Math.min(Math.PI * 1.5, pFiles.length * 0.5);
+      pFiles.forEach((f, i) => {
+        const angle = arcStart + (pFiles.length === 1 ? 0 : (arcSpan * i) / (pFiles.length - 1) - arcSpan / 2);
+        result.push({
+          ...f,
+          _x: parent.x + Math.cos(angle) * orbitR,
+          _y: parent.y + Math.sin(angle) * orbitR,
+          _r: fileR,
+          _color: parent.color,
+          _parentId: parent.id,
+        });
+      });
+    });
+    return result;
+  }, [viewMode, layout.nodes, files]);
+
   // Viewport hook
   const { transform, fitToView, zoomAt, zoomTo, minScale, maxScale, handlers } =
     useViewport({
@@ -619,6 +685,11 @@ export default function GraphCanvas() {
     return m;
   }, [layout.nodes]);
 
+  const routedEdges = useMemo(() => {
+    if (!layout.edges.length || !nodeById.size) return [];
+    return routeAllEdges(layout.edges, nodeById);
+  }, [layout.edges, nodeById]);
+
   // Animation time
   const [time, setTime] = useState(0);
   useEffect(() => {
@@ -643,13 +714,58 @@ export default function GraphCanvas() {
     }
   }, [setSelectedNode, clearSelection, setShowInspector]);
 
-  const handleExpand = useCallback((id) => {
-    if (expansions[id]) {
-      collapseConcept(id);
-    } else {
-      fetchSubConcepts(id);
+  // Zoom-driven detail: when a ready concept becomes large and centered,
+  // replace the old plus-badge affordance by expanding it automatically.
+  useEffect(() => {
+    if (!layout.nodes.length || !subConceptsReadyKeys.size || !viewSize.w || !viewSize.h) return;
+
+    const center = { x: viewSize.w / 2, y: viewSize.h / 2 };
+    let candidate = null;
+    let closestDistance = Infinity;
+
+    layout.nodes.forEach(node => {
+      if (node._isExpansion || expansions[node.id] || !subConceptsReadyKeys.has(node.id)) return;
+
+      const screenRadius = node.r * transform.k;
+      const screenDiameter = screenRadius * 2;
+      if (screenDiameter < AUTO_EXPAND_DIAMETER) return;
+
+      const screenX = transform.x + node.x * transform.k;
+      const screenY = transform.y + node.y * transform.k;
+      const distance = Math.hypot(screenX - center.x, screenY - center.y);
+      const focusWindow = screenRadius + AUTO_EXPAND_CENTER_TOLERANCE;
+
+      if (distance <= focusWindow && distance < closestDistance) {
+        candidate = node;
+        closestDistance = distance;
+      }
+    });
+
+    if (candidate) {
+      fetchSubConcepts(candidate.id);
     }
-  }, [expansions, collapseConcept, fetchSubConcepts]);
+
+    Object.keys(expansions).forEach(id => {
+      const node = nodeById.get(id);
+      if (!node) return;
+      const screenDiameter = node.r * transform.k * 2;
+      if (screenDiameter <= AUTO_COLLAPSE_DIAMETER) {
+        collapseConcept(id);
+      }
+    });
+  }, [
+    layout.nodes,
+    nodeById,
+    transform.x,
+    transform.y,
+    transform.k,
+    viewSize.w,
+    viewSize.h,
+    subConceptsReadyKeys,
+    expansions,
+    fetchSubConcepts,
+    collapseConcept,
+  ]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -704,23 +820,39 @@ export default function GraphCanvas() {
     }
   });
 
-  // Double-click background to zoom/fit
+  // Double-click: zoom into a node, or zoom/fit the background.
   const onBgDoubleClick = useCallback((e) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const nodeG = el?.closest('[data-node-id]');
+    if (nodeG) {
+      const node = nodeById.get(nodeG.getAttribute('data-node-id'));
+      if (node) zoomTo(node.x, node.y, NODE_FOCUS_SCALE);
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
     if (transform.k < 1.2) zoomAt(sx, sy, 1.6);
     else fitToView(true);
-  }, [transform.k, zoomAt, fitToView]);
+  }, [transform.k, zoomAt, zoomTo, fitToView, nodeById]);
 
-  // Sub-concept existence check
-  const subConceptsReadyKeys = useStore(s => s.subConceptsReadyKeys);
-
-  // Background pointer up — deselect if not moved
   const handleBgPointerUp = useCallback((e) => {
     const r = handlers.onPointerUp(e);
-    if (r && !r.moved) handleSelect(null);
-  }, [handlers, handleSelect]);
+    if (!r || r.moved) return;
+
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const nodeG = el?.closest('[data-node-id]');
+    const fileG = el?.closest('[data-file-id]');
+
+    if (nodeG) {
+      handleSelect(nodeG.getAttribute('data-node-id'));
+    } else if (fileG) {
+      setSelectedNode({ type: 'file', id: fileG.getAttribute('data-file-id') });
+      setShowInspector(true);
+    } else {
+      handleSelect(null);
+    }
+  }, [handlers, handleSelect, setSelectedNode, setShowInspector]);
 
   if (!concepts.length) return <div className="eg-center" />;
 
@@ -757,10 +889,7 @@ export default function GraphCanvas() {
 
             {/* Edges */}
             <g>
-              {layout.edges.map((e, i) => {
-                const a = nodeById.get(e.source);
-                const b = nodeById.get(e.target);
-                if (!a || !b) return null;
+              {routedEdges.map(({ edge: e, points, a, b }, i) => {
                 const isHighlighted = connectedIds
                   ? connectedIds.has(e.source) && connectedIds.has(e.target)
                   : false;
@@ -769,11 +898,11 @@ export default function GraphCanvas() {
                 return (
                   <Edge
                     key={`${e.source}-${e.target}-${i}`}
-                    a={a} b={b} label={e.label}
+                    a={a} b={b} points={points} label={e.label}
                     color={color}
                     highlight={isHighlighted}
                     dimmed={isDimmed}
-                    showLabel={true}
+                    showLabel={isHighlighted}
                     time={time}
                     scale={transform.k}
                   />
@@ -788,8 +917,6 @@ export default function GraphCanvas() {
                 const isConnected = connectedIds ? connectedIds.has(n.id) : true;
                 const isDimmed = !!selectedId && !isConnected;
                 const isNext = nextId === n.id && !selectedId;
-                const isExpanded = !!expansions[n.id];
-                const hasSubs = !!subConceptsReadyKeys.has(n.id) || !!expansions[n.id];
                 return (
                   <NodeCircle
                     key={n.id}
@@ -797,18 +924,46 @@ export default function GraphCanvas() {
                     selected={isSelected}
                     dimmed={isDimmed}
                     isNext={isNext}
-                    isExpanded={isExpanded}
                     time={time}
-                    scale={transform.k}
                     showOrder={true}
                     showFileCount={true}
-                    hasSubs={hasSubs}
                     onClick={(e) => { e.stopPropagation(); handleSelect(n.id); }}
-                    onDoubleClick={(e) => { e.stopPropagation(); handleExpand(n.id); }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      zoomTo(n.x, n.y, NODE_FOCUS_SCALE);
+                    }}
                   />
                 );
               })}
             </g>
+
+            {/* File nodes (visible in files mode) */}
+            {viewMode === 'files' && fileNodes.length > 0 && (
+              <g>
+                {fileNodes.map(f => {
+                  const isFileSelected = selectedNode?.type === 'file' && selectedNode?.id === f.id;
+                  const parentSelected = selectedId === f._parentId;
+                  const isDimmed = !!selectedId && !parentSelected && !isFileSelected;
+                  return (
+                    <FileNode
+                      key={f.id}
+                      file={f}
+                      x={f._x}
+                      y={f._y}
+                      r={f._r}
+                      color={f._color}
+                      selected={isFileSelected}
+                      dimmed={isDimmed}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedNode({ type: 'file', id: f.id });
+                        setShowInspector(true);
+                      }}
+                    />
+                  );
+                })}
+              </g>
+            )}
           </g>
         </svg>
 

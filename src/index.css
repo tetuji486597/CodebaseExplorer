@@ -566,11 +566,11 @@ select:focus-visible,
 }
 .sl-lane-label {
   font-family: 'Inter', sans-serif;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.15em;
   pointer-events: none;
-  opacity: 0.7;
+  opacity: 0.85;
 }
 .sl-edge-label {
   font-family: 'Inter', sans-serif;

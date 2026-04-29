@@ -48,7 +48,7 @@ export const DOC_SECTIONS = [
         type: 'interaction-list',
         items: [
           { action: 'Click', target: 'concept node', result: 'Select it and open the inspector panel with details', demo: 'click' },
-          { action: 'Double-click', target: 'concept node', result: 'Expand or collapse its sub-concepts', demo: 'expand' },
+          { action: 'Double-click', target: 'concept node', result: 'Zoom into the concept; close zoom expands ready sub-concepts', demo: 'expand' },
           { action: 'Scroll wheel', target: 'canvas', result: 'Zoom in and out of the graph', demo: 'zoom' },
           { action: 'Click + drag', target: 'canvas background', result: 'Pan around the graph', demo: 'pan' },
           { action: 'Hover', target: 'concept node', result: 'See a tooltip with name, summary, and importance' },
@@ -141,7 +141,7 @@ export const DOC_SECTIONS = [
             shortcuts: [
               { keys: ['Scroll'], description: 'Zoom in and out' },
               { keys: ['Click'], description: 'Select a concept or file' },
-              { keys: ['Double-click'], description: 'Expand or collapse sub-concepts' },
+              { keys: ['Double-click'], description: 'Zoom into a concept; close zoom expands ready sub-concepts' },
               { keys: ['Click + Drag'], description: 'Pan the graph view' },
             ],
           },

@@ -69,20 +69,19 @@ export default function BigPictureScreen() {
   const projectMeta = useStore((s) => s.projectMeta);
   const [restoring, setRestoring] = useState(false);
 
-  // Restore project data on refresh
+  // Load project data on mount (fresh navigation or page refresh)
   useEffect(() => {
     if (concepts.length > 0) return;
-    if (projectId) return;
 
-    const savedId = localStorage.getItem('cbe_project_id');
-    if (!savedId) {
+    const id = projectId || localStorage.getItem('cbe_project_id');
+    if (!id) {
       navigate('/', { replace: true });
       return;
     }
 
     setRestoring(true);
-    useStore.getState().setProjectId(savedId);
-    fetchAndLoadProject(savedId).then((result) => {
+    if (!projectId) useStore.getState().setProjectId(id);
+    fetchAndLoadProject(id).then((result) => {
       setRestoring(false);
       if (!result) {
         localStorage.removeItem('cbe_project_id');

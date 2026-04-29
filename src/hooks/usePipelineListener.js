@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import useStore from '../store/useStore';
-import { fetchAndLoadProject } from '../lib/loadProject';
 import { API_BASE } from '../lib/api';
 
 const STALE_WARNING_MS = 3 * 60 * 1000; // 3 minutes
@@ -56,11 +55,10 @@ export function usePipelineListener() {
       if (status === 'complete') {
         clearInterval(staleCheckId);
         localStorage.removeItem('cbe_active_project');
+        localStorage.setItem('cbe_project_id', projectId);
         es.close();
-        fetchAndLoadProject(projectId).then((ok) => {
-          if (ok) navigate('/overview', { replace: true });
-          else console.error('Failed to load project data');
-        });
+        // Let the progress ring animate to 100% before navigating
+        setTimeout(() => navigate('/overview', { replace: true }), 800);
       }
 
       if (status === 'failed') {
@@ -87,9 +85,8 @@ export function usePipelineListener() {
         setProcessingStatus('Connection lost, reconnecting...');
         setTimeout(() => startListening(projectId, retryCount + 1), delay);
       } else {
-        fetchAndLoadProject(projectId).then((ok) => {
-          if (ok) navigate('/overview', { replace: true });
-        });
+        localStorage.setItem('cbe_project_id', projectId);
+        navigate('/overview', { replace: true });
       }
     };
   }, [navigate, setProcessingStatus]);

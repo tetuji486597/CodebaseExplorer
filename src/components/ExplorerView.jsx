@@ -13,7 +13,6 @@ import InsightCard from './InsightCard';
 import ExplorationProgress from './ExplorationProgress';
 import CompletionSummary from './CompletionSummary';
 import useUserState from '../hooks/useUserState';
-import useProactive from '../hooks/useProactive';
 import useEnrichmentPoller from '../hooks/useEnrichmentPoller';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
@@ -112,9 +111,18 @@ export default function ExplorerView() {
     });
   }, [concepts.length, projectId, urlProjectId, navigate]);
 
-  // Activate user state tracking, proactive engine, and enrichment polling
+  // Activate user state tracking and enrichment polling
   useUserState();
-  useProactive();
+  // Update exploration progress
+  const selectedNode = useStore(s => s.selectedNode);
+  const setExplorationProgress = useStore(s => s.setExplorationProgress);
+  useEffect(() => {
+    const userState = useStore.getState().userState;
+    if (concepts.length > 0 && userState) {
+      const explored = (userState.explored_concepts || []).length;
+      setExplorationProgress(explored / concepts.length);
+    }
+  }, [concepts, selectedNode, setExplorationProgress]);
   useEnrichmentPoller();
 
   if (restoring) {

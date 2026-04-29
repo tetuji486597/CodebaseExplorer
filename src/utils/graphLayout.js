@@ -1,6 +1,9 @@
 // Swim-lane layout — concepts organized into labeled horizontal bands by
 // architectural layer, with left-to-right reading order within each band.
-// Orthogonal edge routing with rounded corners.
+// Dynamic sizing ensures labels never overlap. Batch edge routing prevents crossing.
+
+const CHAR_WIDTH = 7.5; // estimated width per character at 12.5px Inter
+const MIN_NODE_GAP = 40; // minimum px between node edges (not centers)
 
 export function nodeRadius(c) {
   const byImportance = { critical: 50, important: 42, supporting: 34 };
@@ -8,13 +11,20 @@ export function nodeRadius(c) {
   return base + Math.min(8, (c.fileCount || 0) * 0.6);
 }
 
-export function layoutSwimLanes(concepts, edges, W, H) {
-  const PAD_TOP = 70;
-  const PAD_BOT = 60;
-  const PAD_L = 160;
-  const PAD_R = 80;
-  const innerH = H - PAD_TOP - PAD_BOT;
-  const innerW = W - PAD_L - PAD_R;
+function estimateLabelWidth(name) {
+  return (name?.length || 0) * CHAR_WIDTH;
+}
+
+function nodeFootprint(c) {
+  const r = nodeRadius(c);
+  return Math.max(r * 2, estimateLabelWidth(c.name));
+}
+
+export function layoutSwimLanes(concepts, edges, viewW, viewH) {
+  const PAD_TOP = 90;
+  const PAD_BOT = 80;
+  const PAD_L = 200;
+  const PAD_R = 120;
 
   const byLayer = {};
   concepts.forEach(c => {
@@ -26,7 +36,32 @@ export function layoutSwimLanes(concepts, edges, W, H) {
   layerKeys.forEach(k => byLayer[k].sort((a, b) => (a._order || 0) - (b._order || 0)));
 
   const laneCount = Math.max(1, layerKeys.length);
+
+  // Compute minimum required width based on label/node sizes per lane
+  let maxLaneContentW = 0;
+  layerKeys.forEach(k => {
+    const band = byLayer[k];
+    const totalFootprint = band.reduce((sum, c) => sum + nodeFootprint(c), 0);
+    const gaps = Math.max(0, band.length - 1) * MIN_NODE_GAP;
+    maxLaneContentW = Math.max(maxLaneContentW, totalFootprint + gaps);
+  });
+
+  // Compute minimum lane height based on largest node in each lane
+  let maxRadiusAcrossLanes = 50;
+  layerKeys.forEach(k => {
+    byLayer[k].forEach(c => {
+      maxRadiusAcrossLanes = Math.max(maxRadiusAcrossLanes, nodeRadius(c));
+    });
+  });
+  const minLaneH = maxRadiusAcrossLanes * 2 + 80;
+
+  const W = Math.max(viewW, maxLaneContentW + PAD_L + PAD_R);
+  const H = Math.max(viewH, PAD_TOP + PAD_BOT + laneCount * minLaneH);
+
+  const innerH = H - PAD_TOP - PAD_BOT;
+  const innerW = W - PAD_L - PAD_R;
   const laneHeight = innerH / laneCount;
+
   const laneLabels = {
     0: 'Entry Point',
     1: 'Features',
@@ -48,13 +83,25 @@ export function layoutSwimLanes(concepts, edges, W, H) {
       height: laneHeight,
       centerY: laneCY,
     });
+
     const cols = band.length;
+    const radii = band.map(c => nodeRadius(c));
+    const maxR = Math.max(...radii);
+
+    // Determine if we need Y-stagger to avoid label overlap
+    const avgSpacing = cols > 1 ? innerW / (cols - 1) : innerW;
+    const needsStagger = cols > 3 && avgSpacing < maxR * 2 + 80;
+    const staggerAmt = needsStagger
+      ? Math.min(24, laneHeight / 2 - maxR - 36)
+      : 0;
+
     band.forEach((c, colIdx) => {
       const x = PAD_L + (cols === 1 ? innerW / 2 : (innerW * colIdx) / (cols - 1));
+      const yOffset = staggerAmt > 0 ? (colIdx % 2 === 0 ? -staggerAmt : staggerAmt) : 0;
       nodes.push({
         ...c,
         x,
-        y: laneCY,
+        y: laneCY + yOffset,
         r: nodeRadius(c),
         _laneIdx: laneIdx,
       });
@@ -69,7 +116,9 @@ export function layoutSwimLanes(concepts, edges, W, H) {
   };
 }
 
-export function routeOrthogonalEdge(a, b) {
+// --- Batch edge routing with offset to prevent stacking ---
+
+function routeSingleEdge(a, b, offset = 0) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const absDx = Math.abs(dx);
@@ -90,8 +139,8 @@ export function routeOrthogonalEdge(a, b) {
     ty = b.y;
   }
 
-  const midY = (sy + ty) / 2;
-  const midX = (sx + tx) / 2;
+  const midY = (sy + ty) / 2 + offset;
+  const midX = (sx + tx) / 2 + offset;
 
   if (verticalDominant) {
     return [
@@ -107,6 +156,42 @@ export function routeOrthogonalEdge(a, b) {
     { x: midX, y: ty },
     { x: tx, y: ty },
   ];
+}
+
+export function routeAllEdges(edges, nodesById) {
+  // Group edges by lane pair to offset parallel routes
+  const groups = {};
+  const edgeData = edges.map(e => {
+    const a = nodesById.get(e.source);
+    const b = nodesById.get(e.target);
+    if (!a || !b) return null;
+    const key = `${Math.min(a._laneIdx, b._laneIdx)}-${Math.max(a._laneIdx, b._laneIdx)}`;
+    if (!groups[key]) groups[key] = [];
+    const entry = { edge: e, a, b, key };
+    groups[key].push(entry);
+    return entry;
+  }).filter(Boolean);
+
+  // Assign offset index within each group
+  Object.values(groups).forEach(group => {
+    group.sort((x, y) => x.a.x - y.a.x);
+    group.forEach((entry, idx) => {
+      entry.offsetIdx = idx;
+      entry.groupSize = group.length;
+    });
+  });
+
+  const EDGE_SPACING = 14;
+  return edgeData.map(({ edge, a, b, offsetIdx, groupSize }) => {
+    const offset = (offsetIdx - (groupSize - 1) / 2) * EDGE_SPACING;
+    const points = routeSingleEdge(a, b, offset);
+    return { edge, points, a, b };
+  });
+}
+
+// Keep for backward compat — but prefer routeAllEdges for batch routing
+export function routeOrthogonalEdge(a, b) {
+  return routeSingleEdge(a, b, 0);
 }
 
 export function pathFromPoints(points, cornerR = 14) {
