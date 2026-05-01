@@ -97,8 +97,9 @@ export function login(): Promise<void> {
 
           server.close();
           console.log('\n  Authenticated successfully.\n');
-          console.log('  You\'re ready to go. Navigate to a repo and run:\n');
-          console.log('    gui "how does authentication work?"\n');
+          console.log('  Navigate to a repo and run:\n');
+          console.log('    gui              Analyze your codebase');
+          console.log('    gui "question"   Ask about architecture, data flows, etc.\n');
           resolve();
         } else {
           res.writeHead(400, { 'Content-Type': 'text/plain' });
