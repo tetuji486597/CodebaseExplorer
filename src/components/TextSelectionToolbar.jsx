@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router';
 import { MessageSquare } from 'lucide-react';
 import useStore from '../store/useStore';
 
@@ -54,6 +55,9 @@ export default function TextSelectionToolbar() {
   const isTouchDevice = useRef(
     typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches
   );
+
+  const location = useLocation();
+  const isExplorer = location.pathname.startsWith('/explore/');
 
   const projectId = useStore(s => s.projectId);
   const setPendingQuote = useStore(s => s.setPendingQuote);
@@ -110,7 +114,10 @@ export default function TextSelectionToolbar() {
   }, [clearChat, setPendingQuote, setChatPanelOpen]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !isExplorer) {
+      setVisible(false);
+      return;
+    }
 
     const onMouseUp = () => handleSelectionDebounced();
     const onSelectionChange = () => handleSelectionDebounced();
@@ -129,9 +136,9 @@ export default function TextSelectionToolbar() {
       document.removeEventListener('keydown', onKeyDown);
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [projectId, handleSelectionDebounced]);
+  }, [projectId, isExplorer, handleSelectionDebounced]);
 
-  if (!visible || !projectId) return null;
+  if (!visible || !projectId || !isExplorer) return null;
 
   return createPortal(
     <div
