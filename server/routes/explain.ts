@@ -56,6 +56,7 @@ app.post('/', async (c) => {
 
   let question: string;
   let conceptFilter: string | undefined;
+  let filePathFilter: string[] | undefined;
 
   if (conceptKey) {
     const { data: concept } = await supabase
@@ -79,8 +80,25 @@ app.post('/', async (c) => {
       }
     }
 
-    question = `Explain the "${conceptKey}" concept in this codebase`;
-    conceptFilter = conceptKey;
+    if (!concept && conceptKey.startsWith('exp_')) {
+      const { data: subConcept } = await supabase
+        .from('sub_concepts')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('sub_concept_key', conceptKey)
+        .single();
+
+      if (subConcept) {
+        question = `Explain the "${subConcept.name}" sub-component (part of the "${subConcept.parent_concept_key}" concept): ${subConcept.one_liner}`;
+        filePathFilter = subConcept.file_ids?.length ? subConcept.file_ids : undefined;
+      } else {
+        question = `Explain the "${conceptKey}" concept in this codebase`;
+        conceptFilter = conceptKey;
+      }
+    } else {
+      question = `Explain the "${conceptKey}" concept in this codebase`;
+      conceptFilter = conceptKey;
+    }
   } else if (filePath) {
     question = `Explain what the file "${filePath}" does and how it fits into the codebase`;
   } else {
@@ -89,7 +107,7 @@ app.post('/', async (c) => {
 
   // RAG retrieval
   const queryEmbedding = await embed(question);
-  const chunks = await retrieveChunks(projectId, question, queryEmbedding, 10, conceptFilter);
+  const chunks = await retrieveChunks(projectId, question, queryEmbedding, 10, conceptFilter, filePathFilter);
 
   const formattedChunks = chunks
     .map(
