@@ -1,4 +1,5 @@
 import { supabase } from '../db/supabase.js';
+import { uploadFileContentsBatch } from '../db/fileStorage.js';
 import { runFileAnalysis } from './fileAnalysis.js';
 import { runConceptSynthesis } from './conceptSynthesis.js';
 import { runDepthMapping } from './depthMapping.js';
@@ -69,12 +70,11 @@ export async function runCorePipeline(
     return null;
   }
 
-  // Store files
+  // Store file metadata in DB (no content — that goes to Storage)
   const fileRows = fileEntries.map(([path, content]) => ({
     project_id: projectId,
     path,
     name: path.split('/').pop() || path,
-    content,
     role: classifyFile(path, content),
     importance_score: 0,
   }));
@@ -82,6 +82,9 @@ export async function runCorePipeline(
   for (let i = 0; i < fileRows.length; i += 50) {
     await supabase.from('files').insert(fileRows.slice(i, i + 50));
   }
+
+  // Upload file contents to Supabase Storage
+  await uploadFileContentsBatch(projectId, input.fileContents);
 
   if (await isCancelled(projectId)) {
     console.log(`Pipeline cancelled for project ${projectId} after stage 1`);

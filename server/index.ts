@@ -2,7 +2,8 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import 'dotenv/config';
+import { config } from 'dotenv';
+config({ quiet: true });
 
 import pipelineRoutes from './routes/pipeline.js';
 import chatRoutes from './routes/chat.js';
@@ -21,7 +22,7 @@ const app = new Hono();
 
 app.use('*', cors({
   origin: process.env.CORS_ORIGIN || '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use('*', logger());

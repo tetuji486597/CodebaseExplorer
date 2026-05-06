@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { supabase } from '../db/supabase.js';
+import { downloadFileContent, deleteProjectFiles } from '../db/fileStorage.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
 import { computeContentHash, findCachedProject } from '../pipeline/contentHash.js';
 
@@ -77,6 +78,7 @@ app.delete('/projects/:id', async (c) => {
   await supabase.from('files').delete().eq('project_id', projectId);
   await supabase.from('concepts').delete().eq('project_id', projectId);
   await supabase.from('projects').delete().eq('id', projectId);
+  await deleteProjectFiles(projectId).catch(() => {});
 
   return c.json({ success: true });
 });
@@ -354,18 +356,12 @@ app.get('/:id/file-content', async (c) => {
     return c.json({ error: 'path query parameter required' }, 400);
   }
 
-  const { data, error } = await supabase
-    .from('files')
-    .select('content')
-    .eq('project_id', projectId)
-    .eq('path', filePath)
-    .single();
-
-  if (error || !data) {
+  const content = await downloadFileContent(projectId, filePath);
+  if (content === null) {
     return c.json({ error: 'File not found' }, 404);
   }
 
-  return c.json({ content: data.content });
+  return c.json({ content });
 });
 
 export default app;

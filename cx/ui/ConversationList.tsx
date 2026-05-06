@@ -91,8 +91,8 @@ export function ConversationList({ sessions, isActive, onSelect, onNewChat }: Co
         <Text color={colors.textTertiary}> resume  </Text>
         <Text color={colors.accent}>n</Text>
         <Text color={colors.textTertiary}> new chat  </Text>
-        <Text color={colors.accent}>↑↓</Text>
-        <Text color={colors.textTertiary}> browse  </Text>
+        <Text color={colors.accent}>o</Text>
+        <Text color={colors.textTertiary}> open in browser  </Text>
         <Text color={colors.accent}>q</Text>
         <Text color={colors.textTertiary}> quit</Text>
       </Box>

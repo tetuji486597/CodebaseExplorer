@@ -258,6 +258,55 @@ const useStore = create((set, get) => ({
   universeMode: true,
   setUniverseMode: (active) => set({ universeMode: active }),
 
+  // Code element expansion state (Level 3 semantic zoom)
+  codeElementExpansions: {},   // { [subConceptId]: { elements: [...], expandedAt } }
+
+  expandCodeElements: (subConceptId) => {
+    const state = get();
+    if (state.codeElementExpansions[subConceptId]) return;
+
+    const subConcept = state.concepts.find(c => c.id === subConceptId && c._isExpansion);
+    if (!subConcept) return;
+
+    const subFileIds = subConcept.fileIds || [];
+    const relevantFiles = state.files.filter(f => subFileIds.includes(f.id));
+
+    const elements = [];
+    for (const file of relevantFiles) {
+      if (!file.exports?.length) continue;
+      for (const exp of file.exports) {
+        elements.push({
+          id: `${file.id}::${exp.name}`,
+          name: exp.name,
+          whatItDoes: exp.whatItDoes || '',
+          _fileName: file.name,
+          _filePath: file.id,
+          _subConceptId: subConceptId,
+          _isCodeElement: true,
+        });
+        if (elements.length >= 12) break;
+      }
+      if (elements.length >= 12) break;
+    }
+
+    if (!elements.length) return;
+
+    set(s => ({
+      codeElementExpansions: {
+        ...s.codeElementExpansions,
+        [subConceptId]: { elements, expandedAt: Date.now() },
+      },
+    }));
+  },
+
+  collapseCodeElements: (subConceptId) => {
+    set(s => {
+      const next = { ...s.codeElementExpansions };
+      delete next[subConceptId];
+      return { codeElementExpansions: next };
+    });
+  },
+
   // Sub-concept zoom state
   subConceptsCache: {},
   subConceptsLoading: new Set(),
@@ -401,12 +450,18 @@ const useStore = create((set, get) => ({
     const expansion = state.expansions[parentId];
     if (!expansion) return;
 
+    const childIds = new Set(expansion.subConcepts);
+
+    const nextCodeExpansions = { ...state.codeElementExpansions };
+    childIds.forEach(id => { delete nextCodeExpansions[id]; });
+
     const nextExpansions = { ...state.expansions };
     delete nextExpansions[parentId];
 
     set({
       expansions: nextExpansions,
       expansionHistory: state.expansionHistory.filter(h => h.conceptId !== parentId),
+      codeElementExpansions: nextCodeExpansions,
     });
   },
 
@@ -415,6 +470,7 @@ const useStore = create((set, get) => ({
       expansions: {},
       expansionHistory: [],
       highlightedPath: null,
+      codeElementExpansions: {},
     });
   },
 
@@ -466,8 +522,8 @@ const useStore = create((set, get) => ({
     showCodePanel: false, codePanelFileId: null,
     showOnboarding: true, onboardingStep: 0,
     toast: null,
-    expansions: {}, expansionHistory: [],
-    highlightedPath: null,
+    expansions: {}, expandedNodeIds: new Set(), expansionHistory: [],
+    highlightedPath: null, codeElementExpansions: {},
     universeMode: true,
     subConceptsCache: {}, subConceptsLoading: new Set(), subConceptsReadyKeys: new Set(),
   }),

@@ -32,11 +32,15 @@ export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDi
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
   const activeSessionId = useRef(sessionId || `${projectId.slice(0, 8)}-${Date.now()}`);
-  const localFilesRef = useRef<Record<string, string>>({});
+  const [localFiles, setLocalFiles] = useState<Record<string, string>>({});
+  const [filesLoaded, setFilesLoaded] = useState(false);
 
   useEffect(() => {
     const dir = repoDir || process.cwd();
-    getLocalFiles(dir).then(files => { localFilesRef.current = files; }).catch(() => {});
+    getLocalFiles(dir).then(files => {
+      setLocalFiles(files);
+      setFilesLoaded(true);
+    }).catch(() => { setFilesLoaded(true); });
   }, [repoDir]);
 
   useEffect(() => {
@@ -81,8 +85,8 @@ export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDi
 
     const apiBase = getApiBase();
     try {
-      const scopedFiles = Object.keys(localFilesRef.current).length > 0
-        ? scopeLocalFiles(text.trim(), localFilesRef.current, 12)
+      const scopedFiles = Object.keys(localFiles).length > 0
+        ? scopeLocalFiles(text.trim(), localFiles, 12)
         : undefined;
 
       const response = await fetch(`${apiBase}/api/cx/chat`, {

@@ -53,7 +53,9 @@ export const DOC_SECTIONS = [
           { action: 'Click + drag', target: 'canvas background', result: 'Pan around the graph', demo: 'pan' },
           { action: 'Hover', target: 'concept node', result: 'See a tooltip with name, summary, and importance' },
           { action: 'Zoom in close', target: 'concept node', result: 'Auto-loads sub-concepts when node fills >120px' },
-          { action: 'Zoom out far', target: 'expanded concept', result: 'Auto-collapses when node shrinks below 40px' },
+          { action: 'Zoom in deeper', target: 'sub-concept node', result: 'Reveals code elements (functions/exports) as pills when node fills >180px' },
+          { action: 'Click', target: 'code element pill', result: 'Opens the code panel to the file containing that export' },
+          { action: 'Zoom out far', target: 'expanded concept', result: 'Auto-collapses sub-concepts at <40px, code elements at <60px' },
         ],
       },
       {

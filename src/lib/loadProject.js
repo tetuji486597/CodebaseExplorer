@@ -34,6 +34,61 @@ async function initQuizState(projectId, explorationPath, currentPosition) {
   }
 }
 
+function applySubConcepts(store, subConcepts, subConceptEdges) {
+  const grouped = {};
+  subConcepts.forEach(sc => {
+    if (!grouped[sc.parent_concept_key]) grouped[sc.parent_concept_key] = [];
+    grouped[sc.parent_concept_key].push({
+      id: sc.sub_concept_key, name: sc.name, one_liner: sc.one_liner,
+      color: sc.color, importance: sc.importance, file_ids: sc.file_ids || [],
+    });
+  });
+  const edgesByParent = {};
+  (subConceptEdges || []).forEach(se => {
+    if (!edgesByParent[se.parent_concept_key]) edgesByParent[se.parent_concept_key] = [];
+    edgesByParent[se.parent_concept_key].push({
+      source: se.source_sub_key, target: se.target_sub_key, label: se.label,
+    });
+  });
+  const cache = {};
+  for (const key of Object.keys(grouped)) {
+    cache[key] = { subConcepts: grouped[key], subEdges: edgesByParent[key] || [], ready: true };
+  }
+  store.setSubConceptsCache(cache);
+  store.setSubConceptsReadyKeys(Object.keys(grouped));
+}
+
+function pollForSubConcepts(store, projectId) {
+  let attempts = 0;
+  const maxAttempts = 10;
+  const interval = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(interval);
+      return;
+    }
+    try {
+      const concepts = store.concepts || useStore.getState().concepts;
+      if (!concepts.length) return;
+      const firstKey = concepts[0].id;
+      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/sub-concepts/${firstKey}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ready && data.sub_concepts?.length) {
+        clearInterval(interval);
+        // Sub-concepts are ready — refetch full project data for all of them
+        const fullRes = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
+        if (fullRes.ok) {
+          const fullData = await fullRes.json();
+          if (fullData.sub_concepts?.length) {
+            applySubConcepts(store, fullData.sub_concepts, fullData.sub_concept_edges);
+          }
+        }
+      }
+    } catch {}
+  }, 3000);
+}
+
 /**
  * Fetch project data from the API, transform it into store format, and load it.
  * Returns the transformed concepts array (for callers that need it), or null on failure.
@@ -135,27 +190,9 @@ export function loadProjectData(data, projectId) {
     store.setProjectMeta(data.project);
   }
   if (data.sub_concepts?.length) {
-    const grouped = {};
-    data.sub_concepts.forEach(sc => {
-      if (!grouped[sc.parent_concept_key]) grouped[sc.parent_concept_key] = [];
-      grouped[sc.parent_concept_key].push({
-        id: sc.sub_concept_key, name: sc.name, one_liner: sc.one_liner,
-        color: sc.color, importance: sc.importance, file_ids: sc.file_ids || [],
-      });
-    });
-    const edgesByParent = {};
-    (data.sub_concept_edges || []).forEach(se => {
-      if (!edgesByParent[se.parent_concept_key]) edgesByParent[se.parent_concept_key] = [];
-      edgesByParent[se.parent_concept_key].push({
-        source: se.source_sub_key, target: se.target_sub_key, label: se.label,
-      });
-    });
-    const cache = {};
-    for (const key of Object.keys(grouped)) {
-      cache[key] = { subConcepts: grouped[key], subEdges: edgesByParent[key] || [], ready: true };
-    }
-    store.setSubConceptsCache(cache);
-    store.setSubConceptsReadyKeys(Object.keys(grouped));
+    applySubConcepts(store, data.sub_concepts, data.sub_concept_edges);
+  } else if (data.project?.pipeline_status === 'complete' || data.project?.pipeline_status === 'enriched') {
+    pollForSubConcepts(store, projectId);
   }
   store.loadData({ concepts, files, conceptEdges, fileImports: [] });
 

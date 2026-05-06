@@ -6,7 +6,8 @@ import { HistoryView } from './HistoryView.js';
 import { CommandPalette } from './CommandPalette.js';
 import { WelcomeView } from './WelcomeView.js';
 import { AnalyzeView } from './AnalyzeView.js';
-import { getToken } from '../lib/auth.js';
+import { getToken, getWebBase } from '../lib/auth.js';
+import { exec } from 'child_process';
 
 export type View = 'dashboard' | 'chat' | 'history' | 'welcome' | 'analyze';
 
@@ -44,6 +45,12 @@ export function App({ projectId, repoName, token, needsAnalysis, repoDir }: AppP
     if ((input === 'c' || input === 'n') && currentProjectId) {
       setResumeSessionId(null);
       setView('chat');
+      return;
+    }
+    if (input === 'o' && currentProjectId) {
+      const url = `${getWebBase()}/explore/${currentProjectId}`;
+      const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
+      exec(cmd);
       return;
     }
     if (input === 'h' && currentProjectId) {

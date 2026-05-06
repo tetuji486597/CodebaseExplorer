@@ -6,6 +6,9 @@ import { exec } from 'child_process';
 const CONFIG_DIR = resolve(process.env.HOME || process.env.USERPROFILE || '~', '.gui');
 const CREDENTIALS_PATH = resolve(CONFIG_DIR, 'credentials.json');
 
+const SUPABASE_URL = 'https://fpmnuoglufvdmjtsarqx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwbW51b2dsdWZ2ZG1qdHNhcnF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMTM1ODQsImV4cCI6MjA5MDU4OTU4NH0.bLEyDaVi8kuiRMZ0pLsf7mEBhtm6o4PqktMb_9MdfHs';
+
 interface Credentials {
   access_token: string;
   refresh_token: string;
@@ -24,18 +27,56 @@ export function isLoggedIn(): boolean {
   return existsSync(CREDENTIALS_PATH);
 }
 
-export function getToken(): string | null {
+function loadCredentials(): Credentials | null {
   if (!existsSync(CREDENTIALS_PATH)) return null;
   try {
-    const creds: Credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf-8'));
-    // Check if token is expired (with 60s buffer)
-    if (creds.expires_at && Date.now() > (creds.expires_at - 60_000)) {
-      return null; // Expired — caller should re-login
-    }
-    return creds.access_token;
+    return JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf-8'));
   } catch {
     return null;
   }
+}
+
+async function refreshSession(refreshToken: string): Promise<Credentials | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token || !data.refresh_token) return null;
+    const creds: Credentials = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: Date.now() + (data.expires_in || 3600) * 1000,
+    };
+    saveCredentials(creds);
+    return creds;
+  } catch {
+    return null;
+  }
+}
+
+export async function getToken(): Promise<string | null> {
+  const creds = loadCredentials();
+  if (!creds) return null;
+
+  // Token still valid (with 60s buffer)
+  if (creds.expires_at && Date.now() < (creds.expires_at - 60_000)) {
+    return creds.access_token;
+  }
+
+  // Expired — try refresh
+  if (creds.refresh_token) {
+    const refreshed = await refreshSession(creds.refresh_token);
+    if (refreshed) return refreshed.access_token;
+  }
+
+  return null;
 }
 
 export function clearCredentials(): void {

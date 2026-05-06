@@ -5,8 +5,8 @@ import { layoutSwimLanes, routeAllEdges, pathFromPoints } from '../utils/graphLa
 import { graphViewport } from '../lib/graphViewport';
 
 const AUTO_EXPAND_DIAMETER = 120;
-const AUTO_COLLAPSE_DIAMETER = 40;
-const AUTO_EXPAND_CENTER_TOLERANCE = 96;
+const AUTO_COLLAPSE_DIAMETER = 80;
+const AUTO_EXPAND_CENTER_TOLERANCE = 140;
 const NODE_FOCUS_SCALE = 2.15;
 
 // ---------------------------------------------------------------------------
@@ -67,8 +67,17 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
     }
   }, [contentBox, viewportSize, fitScale]);
 
+  const userInteractingRef = useRef(false);
+  const lastFitScaleRef = useRef(fitScale);
+
   useEffect(() => {
-    fitToView(false);
+    // Only reset viewport on fitScale change if user isn't interacting
+    // and the change is significant (prevents feedback loops from layout shifts)
+    const delta = Math.abs(fitScale - lastFitScaleRef.current);
+    lastFitScaleRef.current = fitScale;
+    if (!userInteractingRef.current && delta > 0.01) {
+      fitToView(false);
+    }
   }, [fitScale, viewportSize.w, viewportSize.h]);
 
   useEffect(() => {
@@ -78,6 +87,7 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
       const vel = velRef.current;
 
       const smooth = 0.22;
+      const prevX = cur.x, prevY = cur.y, prevK = cur.k;
       cur.x += (tgt.x - cur.x) * smooth;
       cur.y += (tgt.y - cur.y) * smooth;
       cur.k += (tgt.k - cur.k) * smooth;
@@ -92,7 +102,14 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
         tgt.y = clamped.y;
       }
 
-      setTransform({ x: cur.x, y: cur.y, k: cur.k });
+      // Only trigger re-render if values actually changed meaningfully
+      const dx = Math.abs(cur.x - prevX);
+      const dy = Math.abs(cur.y - prevY);
+      const dk = Math.abs(cur.k - prevK);
+      if (dx > 0.1 || dy > 0.1 || dk > 0.0001) {
+        setTransform({ x: cur.x, y: cur.y, k: cur.k });
+      }
+
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -125,8 +142,12 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
     targetRef.current = clamp({ x, y, k: targetK });
   }, [minScale, maxScale, clamp, viewportSize]);
 
+  const wheelTimeoutRef = useRef(null);
   const onWheel = useCallback((e) => {
     e.preventDefault();
+    userInteractingRef.current = true;
+    if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+    wheelTimeoutRef.current = setTimeout(() => { userInteractingRef.current = false; }, 600);
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -140,6 +161,7 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
   const onPointerDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    userInteractingRef.current = true;
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -178,6 +200,8 @@ function useViewport({ contentBox, viewportSize, maxScale = 2.5, padding = 60 })
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     const moved = dragRef.current.moved;
     dragRef.current = null;
+    // Clear interacting flag after momentum settles
+    setTimeout(() => { userInteractingRef.current = false; }, 600);
     return { moved };
   }, []);
 
@@ -297,6 +321,7 @@ function NodeCircle({
   node, selected, dimmed, isNext, time,
   onClick, onDoubleClick, showOrder, showFileCount,
   subConceptsReadyKeys, selectedId,
+  hasDepth, expandProgress, isLoading,
 }) {
   const colors = CONCEPT_COLORS[node.color] || CONCEPT_COLORS.gray;
   const r = node.r;
@@ -305,6 +330,8 @@ function NodeCircle({
   const pulseOpacity = isNext ? 0.4 + Math.sin(time / 500) * 0.25 : 0;
   const opacity = dimmed ? 0.28 : 1;
   const hasReadySubs = !node._expanded && subConceptsReadyKeys?.has(node.id);
+
+  const circumference = 2 * Math.PI * (drawR + 8);
 
   return (
     <g
@@ -315,6 +342,45 @@ function NodeCircle({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
+      {/* Depth-available indicator */}
+      {hasDepth && !expandProgress && !isLoading && (
+        <circle
+          r={drawR + 5}
+          fill="none"
+          stroke={colors.accent}
+          strokeWidth={0.75}
+          strokeOpacity={0.35}
+          strokeDasharray="4 3"
+        />
+      )}
+
+      {/* Expansion progress ring */}
+      {expandProgress > 0 && !isLoading && (
+        <circle
+          r={drawR + 8}
+          fill="none"
+          stroke={colors.accent}
+          strokeWidth={1.5}
+          strokeOpacity={0.4 + expandProgress * 0.4}
+          strokeDasharray={`${expandProgress * circumference} ${circumference}`}
+          transform="rotate(-90)"
+          style={{ transition: 'stroke-dasharray 150ms ease-out, stroke-opacity 150ms ease-out' }}
+        />
+      )}
+
+      {/* Loading spinner ring */}
+      {isLoading && (
+        <circle
+          className="sl-expand-spinner"
+          r={drawR + 8}
+          fill="none"
+          stroke={colors.accent}
+          strokeWidth={2}
+          strokeOpacity={0.6}
+          strokeDasharray={`${circumference * 0.25} ${circumference * 0.75}`}
+        />
+      )}
+
       {/* Next-up pulse halo */}
       {isNext && (
         <>
@@ -448,6 +514,53 @@ function FileNode({ file, x, y, r, color, selected, dimmed, onClick }) {
 }
 
 // ---------------------------------------------------------------------------
+// CodeElementNode — monospace pill for Level 3 semantic zoom
+// ---------------------------------------------------------------------------
+function CodeElementNode({ element, x, y, color, dimmed, onClick }) {
+  const colors = CONCEPT_COLORS[color] || CONCEPT_COLORS.gray;
+  const opacity = dimmed ? 0.18 : 1;
+  const label = element.name.length > 16 ? element.name.slice(0, 14) + '\u2026' : element.name;
+  const pillW = Math.min(130, label.length * 7 + 20);
+  const pillH = 22;
+  const cornerR = pillH / 2;
+
+  return (
+    <g
+      data-code-element-id={element.id}
+      transform={`translate(${x},${y})`}
+      style={{ opacity, cursor: 'pointer', transition: 'opacity 200ms ease' }}
+      onClick={onClick}
+    >
+      <rect
+        x={-pillW / 2} y={-pillH / 2}
+        width={pillW} height={pillH}
+        rx={cornerR}
+        fill={colors.fill}
+        stroke={colors.accent}
+        strokeWidth={0.75}
+        strokeOpacity={0.5}
+      />
+      <text
+        textAnchor="middle" dy="0.35em"
+        style={{
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          fontSize: 9,
+          fill: colors.text,
+          fontWeight: 500,
+          pointerEvents: 'none',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        {label}
+      </text>
+      {element.whatItDoes && (
+        <title>{element.name}: {element.whatItDoes}</title>
+      )}
+    </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ViewportControls
 // ---------------------------------------------------------------------------
 function ViewportControls({ scale, minScale, maxScale, onFit, onZoomIn, onZoomOut }) {
@@ -498,7 +611,9 @@ export default function GraphCanvas() {
     exploredConcepts, markConceptExplored,
     expansions, fetchSubConcepts, collapseConcept,
     universeMode, setUniverseMode,
-    subConceptsReadyKeys,
+    subConceptsReadyKeys, subConceptsLoading,
+    codeElementExpansions, expandCodeElements, collapseCodeElements,
+    openCodePanel,
   } = useStore();
 
   // Immediately exit universe mode — swim lanes don't use it
@@ -663,12 +778,39 @@ export default function GraphCanvas() {
     return result;
   }, [viewMode, layout.nodes, files]);
 
+  // Code element positions — pills arrayed around expanded sub-concepts
+  const codeElementNodes = useMemo(() => {
+    const entries = Object.entries(codeElementExpansions);
+    if (!entries.length || !layout.nodes.length) return [];
+    const result = [];
+    entries.forEach(([subConceptId, expansion]) => {
+      const parentNode = layout.nodes.find(n => n.id === subConceptId);
+      if (!parentNode) return;
+      const elements = expansion.elements;
+      const count = elements.length;
+      const orbitR = parentNode.r + 32;
+      const arcStart = -Math.PI / 2;
+      const arcSpan = Math.min(Math.PI * 1.6, count * 0.45);
+      elements.forEach((el, i) => {
+        const angle = arcStart + (count === 1 ? 0 : (arcSpan * i) / (count - 1) - arcSpan / 2);
+        result.push({
+          ...el,
+          _x: parentNode.x + Math.cos(angle) * orbitR,
+          _y: parentNode.y + Math.sin(angle) * orbitR,
+          _color: parentNode.color,
+          _parentNode: parentNode,
+        });
+      });
+    });
+    return result;
+  }, [codeElementExpansions, layout.nodes]);
+
   // Viewport hook
   const { transform, fitToView, zoomAt, zoomTo, minScale, maxScale, handlers } =
     useViewport({
       contentBox: layout.contentBox,
       viewportSize: viewSize,
-      maxScale: 2.5,
+      maxScale: 3.5,
       padding: 60,
     });
 
@@ -724,13 +866,18 @@ export default function GraphCanvas() {
     return routeAllEdges(layout.edges, nodeById);
   }, [layout.edges, nodeById]);
 
-  // Animation time
+  // Animation time — throttled to 10fps to avoid re-rendering entire tree at 60fps
   const [time, setTime] = useState(0);
   useEffect(() => {
     let raf;
     const start = performance.now();
+    let lastUpdate = 0;
     const loop = () => {
-      setTime(performance.now() - start);
+      const now = performance.now();
+      if (now - lastUpdate > 100) {
+        setTime(now - start);
+        lastUpdate = now;
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -750,41 +897,113 @@ export default function GraphCanvas() {
 
   // Zoom-driven detail: when a ready concept becomes large and centered,
   // replace the old plus-badge affordance by expanding it automatically.
+  // Debounced to prevent rapid expand/collapse cycling that causes layout jumps.
+  const autoExpandTimerRef = useRef(null);
   useEffect(() => {
     if (!layout.nodes.length || !subConceptsReadyKeys.size || !viewSize.w || !viewSize.h) return;
 
+    if (autoExpandTimerRef.current) clearTimeout(autoExpandTimerRef.current);
+    autoExpandTimerRef.current = setTimeout(() => {
+      // Collapse first, then only expand if we're not near min zoom.
+      // Use a base-radius estimate for the collapse check so the inflated
+      // expanded radius doesn't prevent collapsing at low zoom.
+      const BASE_R_MAX = 58; // largest possible unexpanded radius
+      const nearMinZoom = transform.k <= minScale * 1.15;
+      const baseDiameterAtZoom = BASE_R_MAX * transform.k * 2;
+      const shouldCollapseAll = nearMinZoom || baseDiameterAtZoom <= AUTO_COLLAPSE_DIAMETER;
+
+      Object.keys(expansions).forEach(id => {
+        const node = nodeById.get(id);
+        if (!node) return;
+        if (shouldCollapseAll) {
+          collapseConcept(id);
+          return;
+        }
+        const screenDiameter = node.r * transform.k * 2;
+        if (screenDiameter <= AUTO_COLLAPSE_DIAMETER) {
+          collapseConcept(id);
+        }
+      });
+
+      if (shouldCollapseAll) return;
+
+      const center = { x: viewSize.w / 2, y: viewSize.h / 2 };
+      let candidate = null;
+      let closestDistance = Infinity;
+
+      layout.nodes.forEach(node => {
+        if (node._isExpansion || expansions[node.id] || !subConceptsReadyKeys.has(node.id)) return;
+
+        const screenRadius = node.r * transform.k;
+        const screenDiameter = screenRadius * 2;
+        if (screenDiameter < AUTO_EXPAND_DIAMETER) return;
+
+        const screenX = transform.x + node.x * transform.k;
+        const screenY = transform.y + node.y * transform.k;
+        const distance = Math.hypot(screenX - center.x, screenY - center.y);
+        const focusWindow = screenRadius + AUTO_EXPAND_CENTER_TOLERANCE;
+
+        if (distance <= focusWindow && distance < closestDistance) {
+          candidate = node;
+          closestDistance = distance;
+        }
+      });
+
+      if (candidate) {
+        fetchSubConcepts(candidate.id);
+      }
+    }, 400);
+
+    return () => {
+      if (autoExpandTimerRef.current) clearTimeout(autoExpandTimerRef.current);
+    };
+  }, [
+    layout.nodes,
+    nodeById,
+    transform.x,
+    transform.y,
+    transform.k,
+    viewSize.w,
+    viewSize.h,
+    minScale,
+    subConceptsReadyKeys,
+    expansions,
+    fetchSubConcepts,
+    collapseConcept,
+  ]);
+
+  // Level 3: auto-expand/collapse code elements on sub-concept zoom
+  const CODE_EL_EXPAND_DIAMETER = 180;
+  const CODE_EL_COLLAPSE_DIAMETER = 60;
+  const CODE_EL_CENTER_TOLERANCE = 100;
+
+  useEffect(() => {
+    if (!layout.nodes.length || !viewSize.w || !viewSize.h) return;
+
     const center = { x: viewSize.w / 2, y: viewSize.h / 2 };
-    let candidate = null;
-    let closestDistance = Infinity;
 
     layout.nodes.forEach(node => {
-      if (expansions[node.id] || !subConceptsReadyKeys.has(node.id)) return;
+      if (!node._isExpansion) return;
+      const screenDiameter = node.r * transform.k * 2;
 
-      const screenRadius = node.r * transform.k;
-      const screenDiameter = screenRadius * 2;
-      if (screenDiameter < AUTO_EXPAND_DIAMETER) return;
-
-      const screenX = transform.x + node.x * transform.k;
-      const screenY = transform.y + node.y * transform.k;
-      const distance = Math.hypot(screenX - center.x, screenY - center.y);
-      const focusWindow = screenRadius + AUTO_EXPAND_CENTER_TOLERANCE;
-
-      if (distance <= focusWindow && distance < closestDistance) {
-        candidate = node;
-        closestDistance = distance;
+      if (!codeElementExpansions[node.id] && screenDiameter >= CODE_EL_EXPAND_DIAMETER) {
+        const screenX = transform.x + node.x * transform.k;
+        const screenY = transform.y + node.y * transform.k;
+        const distance = Math.hypot(screenX - center.x, screenY - center.y);
+        const focusWindow = node.r * transform.k + CODE_EL_CENTER_TOLERANCE;
+        if (distance <= focusWindow) {
+          expandCodeElements(node.id);
+        }
       }
     });
 
-    if (candidate) {
-      fetchSubConcepts(candidate.id);
-    }
-
-    Object.keys(expansions).forEach(id => {
+    const nearMinZoom = transform.k <= minScale * 1.15;
+    Object.keys(codeElementExpansions).forEach(id => {
       const node = nodeById.get(id);
       if (!node) return;
       const screenDiameter = node.r * transform.k * 2;
-      if (screenDiameter <= AUTO_COLLAPSE_DIAMETER) {
-        collapseConcept(id);
+      if (screenDiameter <= CODE_EL_COLLAPSE_DIAMETER || nearMinZoom) {
+        collapseCodeElements(id);
       }
     });
   }, [
@@ -795,10 +1014,10 @@ export default function GraphCanvas() {
     transform.k,
     viewSize.w,
     viewSize.h,
-    subConceptsReadyKeys,
-    expansions,
-    fetchSubConcepts,
-    collapseConcept,
+    minScale,
+    codeElementExpansions,
+    expandCodeElements,
+    collapseCodeElements,
   ]);
 
   // Keyboard shortcuts
@@ -877,8 +1096,12 @@ export default function GraphCanvas() {
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const nodeG = el?.closest('[data-node-id]');
     const fileG = el?.closest('[data-file-id]');
+    const codeElG = el?.closest('[data-code-element-id]');
 
-    if (nodeG) {
+    if (codeElG) {
+      // Code element pills handle their own click via onClick
+      return;
+    } else if (nodeG) {
       handleSelect(nodeG.getAttribute('data-node-id'));
     } else if (fileG) {
       setSelectedNode({ type: 'file', id: fileG.getAttribute('data-file-id') });
@@ -951,6 +1174,23 @@ export default function GraphCanvas() {
                 const isConnected = connectedIds ? connectedIds.has(n.id) : true;
                 const isDimmed = !!selectedId && !isConnected;
                 const isNext = nextId === n.id && !selectedId;
+
+                const hasDepth = !n._isExpansion && !expansions[n.id] && subConceptsReadyKeys.has(n.id);
+                const isNodeLoading = subConceptsLoading.has(n.id);
+
+                let expandProgress = 0;
+                if (hasDepth && !isNodeLoading) {
+                  const screenDiameter = n.r * transform.k * 2;
+                  const screenX = transform.x + n.x * transform.k;
+                  const screenY = transform.y + n.y * transform.k;
+                  const distToCenter = Math.hypot(screenX - viewSize.w / 2, screenY - viewSize.h / 2);
+                  const focusWindow = n.r * transform.k + AUTO_EXPAND_CENTER_TOLERANCE;
+                  const sizeProgress = Math.min(1, screenDiameter / AUTO_EXPAND_DIAMETER);
+                  const centerProgress = Math.max(0, 1 - distToCenter / (focusWindow * 1.5));
+                  expandProgress = Math.min(sizeProgress, centerProgress);
+                  if (expandProgress < 0.3) expandProgress = 0;
+                }
+
                 return (
                   <NodeCircle
                     key={n.id}
@@ -963,6 +1203,9 @@ export default function GraphCanvas() {
                     showFileCount={true}
                     subConceptsReadyKeys={subConceptsReadyKeys}
                     selectedId={selectedId}
+                    hasDepth={hasDepth}
+                    expandProgress={expandProgress}
+                    isLoading={isNodeLoading}
                     onClick={(e) => { e.stopPropagation(); handleSelect(n.id); }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -972,6 +1215,41 @@ export default function GraphCanvas() {
                 );
               })}
             </g>
+
+            {/* Code element pills (Level 3 semantic zoom) */}
+            {codeElementNodes.length > 0 && (
+              <g className="sl-code-elements">
+                {codeElementNodes.map(el => (
+                  <line
+                    key={`ce-conn-${el.id}`}
+                    x1={el._parentNode.x} y1={el._parentNode.y}
+                    x2={el._x} y2={el._y}
+                    stroke={CONCEPT_COLORS[el._color]?.accent || '#888'}
+                    strokeWidth={0.5}
+                    strokeOpacity={0.2}
+                    strokeDasharray="3 3"
+                  />
+                ))}
+                {codeElementNodes.map(el => {
+                  const parentSelected = selectedId === el._subConceptId;
+                  const isDimmed = !!selectedId && !parentSelected;
+                  return (
+                    <CodeElementNode
+                      key={el.id}
+                      element={el}
+                      x={el._x}
+                      y={el._y}
+                      color={el._color}
+                      dimmed={isDimmed}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCodePanel(el._filePath);
+                      }}
+                    />
+                  );
+                })}
+              </g>
+            )}
 
             {/* File nodes (visible in files mode) */}
             {viewMode === 'files' && fileNodes.length > 0 && (

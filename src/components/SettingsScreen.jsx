@@ -195,7 +195,7 @@ export default function SettingsScreen() {
       flexDirection: 'column',
       background: 'var(--color-bg-base)',
     }}>
-      <BackBar label="Settings" to="/projects" />
+      <BackBar label="Settings" />
 
       <div style={{
         flex: 1,
