@@ -1,6 +1,7 @@
 import { createInterface } from 'readline';
 import { getApiBase, getToken, getWebBase } from './auth.js';
 import { renderChatHeader, renderChatInstructions, renderGraphExpansion, ansi } from './display.js';
+import { getLocalFiles, scopeLocalFiles } from './localContext.js';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -26,6 +27,7 @@ export async function sendChatMessage(
   token: string,
   history: ChatMessage[] = [],
   sessionId?: string,
+  localFiles?: Record<string, string>,
 ): Promise<string> {
   const apiBase = getApiBase();
   const response = await fetch(`${apiBase}/api/cx/chat`, {
@@ -34,7 +36,7 @@ export async function sendChatMessage(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ projectId, message, history, sessionId }),
+    body: JSON.stringify({ projectId, message, history, sessionId, localFiles }),
   });
 
   if (!response.ok) {
@@ -176,12 +178,18 @@ export async function fetchSessionMessages(projectId: string, sessionId: string,
   return data.messages || [];
 }
 
-export async function interactiveChat(projectId: string, token: string, repoName: string): Promise<void> {
+export async function interactiveChat(projectId: string, token: string, repoName: string, repoDir?: string): Promise<void> {
   const conceptCount = await fetchConceptCount(projectId, token);
   console.log(renderChatHeader(repoName, conceptCount));
 
   const mapUrl = `${getWebBase()}/explore/${projectId}`;
   console.log(`  ${ansi.dim}Open in browser:${ansi.reset} ${ansi.underline}${mapUrl}${ansi.reset}\n`);
+
+  const localDir = repoDir || process.cwd();
+  let allLocalFiles: Record<string, string> = {};
+  try {
+    allLocalFiles = await getLocalFiles(localDir);
+  } catch {}
 
   const history = await fetchChatHistory(projectId, token);
   const recentHistory = history.slice(-6);
@@ -251,7 +259,10 @@ export async function interactiveChat(projectId: string, token: string, repoName
     localHistory.push({ role: 'user', content: input });
 
     try {
-      const response = await sendChatMessage(projectId, input, token, localHistory.slice(-6), sessionId);
+      const scopedFiles = Object.keys(allLocalFiles).length > 0
+        ? scopeLocalFiles(input, allLocalFiles, 12)
+        : undefined;
+      const response = await sendChatMessage(projectId, input, token, localHistory.slice(-6), sessionId, scopedFiles);
       localHistory.push({ role: 'assistant', content: response });
     } catch (err: any) {
       console.error(`\n  ${ansi.red}Error: ${err.message}${ansi.reset}\n`);

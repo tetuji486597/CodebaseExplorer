@@ -7,11 +7,15 @@ import { login, getToken, clearCredentials, getApiBase, getWebBase } from '../li
 import { saveProject, getProjectForRepo, listProjects } from '../lib/projects.js';
 import { sendChatMessage, interactiveChat, fetchSessions, fetchSessionMessages } from '../lib/chat.js';
 import { renderConceptMap, renderAnswer, renderShareLink, renderFollowUpHint, ansi, type ConceptData, type EdgeData } from '../lib/display.js';
+import { getLocalFiles, scopeLocalFiles } from '../lib/localContext.js';
+import React from 'react';
+import { render } from 'ink';
+import { App } from '../ui/App.js';
 
-// Load .env from cwd or parent
+// Load .env silently
 for (const dir of [process.cwd(), resolve(process.cwd(), '..')]) {
   const envPath = resolve(dir, '.env');
-  if (existsSync(envPath)) { config({ path: envPath }); break; }
+  if (existsSync(envPath)) { config({ path: envPath, quiet: true }); break; }
 }
 
 const args = process.argv.slice(2);
@@ -57,7 +61,7 @@ if (subcommand === 'login') {
       console.error('\n  No project found for this directory. Run `gui` first to analyze.\n');
       process.exit(1);
     }
-    interactiveChat(cached.projectId, token, cached.repoName);
+    interactiveChat(cached.projectId, token, cached.repoName, repoDir);
   });
 } else if (subcommand === 'projects') {
   const projects = listProjects();
@@ -194,23 +198,30 @@ if (subcommand === 'login') {
     process.exit(1);
   };
 
-  if (!query && !cached) {
-    // New codebase, no question → analyze
-    requireToken((token) => { analyzePipeline(repoDir, token).catch(handleError); });
-  } else if (query && cached) {
-    // Known codebase + question → chat
-    requireToken((token) => { followUpChat(cached, query, repoDir, token).catch(handleError); });
+  if (query && cached) {
+    // Known codebase + question → one-shot chat (non-interactive)
+    await requireToken((token) => { followUpChat(cached, query, repoDir, token).catch(handleError); });
   } else if (query && !cached) {
     // New codebase + question → analyze first, then chat
-    requireToken((token) => { analyzeAndChat(repoDir, query, token).catch(handleError); });
+    await requireToken((token) => { analyzeAndChat(repoDir, query, token).catch(handleError); });
   } else {
-    // Known codebase, no question → interactive chat
-    requireToken((token) => { interactiveChat(cached!.projectId, token, cached!.repoName); });
+    // No query → launch interactive TUI
+    const token = await getToken();
+    const repoName = basename(repoDir);
+    render(
+      React.createElement(App, {
+        projectId: cached?.projectId || null,
+        repoName,
+        token: token || '',
+        needsAnalysis: !cached,
+        repoDir,
+      })
+    );
   }
 }
 
-function requireToken(fn: (token: string) => void) {
-  const token = getToken();
+async function requireToken(fn: (token: string) => void) {
+  const token = await getToken();
   if (!token) {
     console.error('\n  Not logged in. Run `gui login` first.\n');
     process.exit(1);
@@ -239,7 +250,9 @@ async function followUpChat(
   }
 
   console.log(`\n  ${ansi.bold}gui${ansi.reset}  ${ansi.dim}following up on ${repoName}${ansi.reset}`);
-  await sendChatMessage(cached.projectId, query, token);
+  const allFiles = await getLocalFiles(repoDir);
+  const scopedFiles = scopeLocalFiles(query, allFiles, 12);
+  await sendChatMessage(cached.projectId, query, token, [], undefined, scopedFiles);
   const mapUrl = `${getWebBase()}/explore/${cached.projectId}`;
   console.log(renderShareLink(mapUrl));
   console.log(renderFollowUpHint());

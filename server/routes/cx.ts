@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { requireAuth } from '../middleware/auth.js';
 import { supabase } from '../db/supabase.js';
+import { downloadFileContent } from '../db/fileStorage.js';
 import { runCorePipeline, runEnrichment } from '../pipeline/orchestrator.js';
 import { computeContentHash, findCachedProject } from '../pipeline/contentHash.js';
 import { generateTerminalAnswer } from '../ai/terminalAnswer.js';
@@ -188,7 +189,7 @@ app.post('/pipeline', requireAuth, async (c) => {
 // ---- POST /chat — Terminal chat with RAG or fallback ----
 
 app.post('/chat', requireAuth, async (c) => {
-  const { projectId, message, history, sessionId: clientSessionId } = await c.req.json();
+  const { projectId, message, history, sessionId: clientSessionId, localFiles } = await c.req.json();
   const userId = c.get('userId') as string;
 
   if (!projectId || !message) {
@@ -235,7 +236,15 @@ app.post('/chat', requireAuth, async (c) => {
   const isEnriched = project.pipeline_status === 'enriched';
   let formattedContext = '';
 
-  if (isEnriched) {
+  if (localFiles && typeof localFiles === 'object' && Object.keys(localFiles).length > 0) {
+    // CLI provided local file context — use it directly (fastest, most relevant)
+    formattedContext = Object.entries(localFiles)
+      .map(([path, content]: [string, any], i: number) => {
+        const truncated = typeof content === 'string' ? content.substring(0, 4000) : '';
+        return `<file index="${i + 1}" path="${path}">\n${truncated}\n</file>`;
+      })
+      .join('\n');
+  } else if (isEnriched) {
     // Full RAG: embed query + retrieve chunks
     const queryEmbedding = await embed(message);
     const chunks = await retrieveChunks(projectId, message, queryEmbedding, 10);
@@ -252,13 +261,11 @@ ${ch.content}
     // Fallback: stuff relevant file content directly
     const { data: files } = await supabase
       .from('files')
-      .select('path, content, analysis, concept_id')
+      .select('path, analysis, concept_id')
       .eq('project_id', projectId)
-      .not('content', 'is', null)
       .limit(30);
 
     if (files) {
-      // Simple relevance scoring by keyword overlap
       const queryWords = message.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
       const scored = files.map((f: any) => {
         const text = `${f.path} ${f.analysis?.purpose || ''}`.toLowerCase();
@@ -266,7 +273,15 @@ ${ch.content}
         return { ...f, score: hits };
       }).sort((a: any, b: any) => b.score - a.score).slice(0, 10);
 
-      formattedContext = scored
+      const withContent = await Promise.all(
+        scored.map(async (f: any) => {
+          const content = await downloadFileContent(projectId, f.path);
+          return { ...f, content };
+        })
+      );
+
+      formattedContext = withContent
+        .filter((f: any) => f.content)
         .map((f: any, i: number) => {
           const truncated = f.content.substring(0, 3000);
           return `<file index="${i + 1}" path="${f.path}" purpose="${f.analysis?.purpose || 'unknown'}">
