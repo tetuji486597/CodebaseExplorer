@@ -16,7 +16,8 @@ export async function retrieveChunks(
   queryText: string,
   queryEmbedding: number[],
   matchCount: number = 10,
-  filterConcept?: string
+  filterConcept?: string,
+  filterFilePaths?: string[]
 ): Promise<RetrievedChunk[]> {
   const { data, error } = await supabase.rpc('search_code_chunks', {
     p_project_id: projectId,
@@ -25,6 +26,7 @@ export async function retrieveChunks(
     match_threshold: 0.3,
     match_count: matchCount,
     filter_concept: filterConcept || null,
+    filter_file_paths: filterFilePaths || null,
   });
 
   if (error) {

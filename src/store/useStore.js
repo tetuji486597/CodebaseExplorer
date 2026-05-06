@@ -308,7 +308,6 @@ const useStore = create((set, get) => ({
 
   // Graph expansion state
   expansions: {},
-  expandedNodeIds: new Set(),
   expansionHistory: [],
   highlightedPath: null,
 
@@ -352,9 +351,9 @@ const useStore = create((set, get) => ({
       }
     }
 
-    // Sprawl check: auto-collapse oldest if over budget
-    const visibleCount = get().concepts.length;
-    if (visibleCount > 35) {
+    // Sprawl check: auto-collapse oldest if too many expansions
+    const expansionCount = Object.keys(get().expansions).length;
+    if (expansionCount > 3) {
       const history = get().expansionHistory;
       if (history.length > 0) {
         const oldest = history[0];
@@ -369,7 +368,7 @@ const useStore = create((set, get) => ({
     const parent = state.concepts.find(c => c.id === parentId);
     if (!parent) return;
 
-    const newNodes = subConcepts.map(sc => ({
+    const subConceptNodes = subConcepts.map(sc => ({
       id: sc.id,
       name: sc.name,
       one_liner: sc.one_liner,
@@ -379,41 +378,17 @@ const useStore = create((set, get) => ({
       fileCount: sc.file_ids?.length || 0,
       _isExpansion: true,
       _parentId: parentId,
-      _entranceTime: performance.now(),
     }));
 
-    const newEdges = [
-      ...subConcepts.map(sc => ({
-        source: parentId,
-        target: sc.id,
-        label: 'contains',
-        strength: 'strong',
-        _isExpansion: true,
-      })),
-      ...subEdges.map(se => ({
-        source: se.source,
-        target: se.target,
-        label: se.label,
-        strength: 'moderate',
-        _isExpansion: true,
-      })),
-    ];
-
-    const nextExpandedIds = new Set(state.expandedNodeIds);
-    newNodes.forEach(n => nextExpandedIds.add(n.id));
-
     set(s => ({
-      concepts: [...s.concepts, ...newNodes],
-      conceptEdges: [...s.conceptEdges, ...newEdges],
       expansions: {
         ...s.expansions,
         [parentId]: {
-          subConcepts: newNodes.map(n => n.id),
-          subEdges: newEdges,
+          subConcepts: subConceptNodes,
+          subEdges: subEdges || [],
           expandedAt: Date.now(),
         },
       },
-      expandedNodeIds: nextExpandedIds,
       expansionHistory: [
         ...s.expansionHistory,
         { conceptId: parentId, name: parent.name, expandedAt: Date.now() },
@@ -426,39 +401,18 @@ const useStore = create((set, get) => ({
     const expansion = state.expansions[parentId];
     if (!expansion) return;
 
-    const childIds = new Set(expansion.subConcepts);
-    const nextExpandedIds = new Set(state.expandedNodeIds);
-    childIds.forEach(id => nextExpandedIds.delete(id));
-
     const nextExpansions = { ...state.expansions };
     delete nextExpansions[parentId];
 
     set({
-      concepts: state.concepts.filter(c => !childIds.has(c.id)),
-      conceptEdges: state.conceptEdges.filter(e =>
-        !childIds.has(e.source) && !childIds.has(e.target) &&
-        !(e.source === parentId && childIds.has(e.target))
-      ),
       expansions: nextExpansions,
-      expandedNodeIds: nextExpandedIds,
       expansionHistory: state.expansionHistory.filter(h => h.conceptId !== parentId),
     });
   },
 
   collapseAll: () => {
-    const state = get();
-    const allExpansionNodeIds = new Set();
-    for (const exp of Object.values(state.expansions)) {
-      exp.subConcepts.forEach(id => allExpansionNodeIds.add(id));
-    }
-
     set({
-      concepts: state.concepts.filter(c => !allExpansionNodeIds.has(c.id)),
-      conceptEdges: state.conceptEdges.filter(e =>
-        !allExpansionNodeIds.has(e.source) && !allExpansionNodeIds.has(e.target) && !e._temporary
-      ),
       expansions: {},
-      expandedNodeIds: new Set(),
       expansionHistory: [],
       highlightedPath: null,
     });
@@ -512,7 +466,7 @@ const useStore = create((set, get) => ({
     showCodePanel: false, codePanelFileId: null,
     showOnboarding: true, onboardingStep: 0,
     toast: null,
-    expansions: {}, expandedNodeIds: new Set(), expansionHistory: [],
+    expansions: {}, expansionHistory: [],
     highlightedPath: null,
     universeMode: true,
     subConceptsCache: {}, subConceptsLoading: new Set(), subConceptsReadyKeys: new Set(),

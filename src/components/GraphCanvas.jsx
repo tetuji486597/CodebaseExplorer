@@ -296,6 +296,7 @@ function Edge({ a, b, points, label, color, highlight, dimmed, showLabel, time, 
 function NodeCircle({
   node, selected, dimmed, isNext, time,
   onClick, onDoubleClick, showOrder, showFileCount,
+  subConceptsReadyKeys, selectedId,
 }) {
   const colors = CONCEPT_COLORS[node.color] || CONCEPT_COLORS.gray;
   const r = node.r;
@@ -303,6 +304,7 @@ function NodeCircle({
 
   const pulseOpacity = isNext ? 0.4 + Math.sin(time / 500) * 0.25 : 0;
   const opacity = dimmed ? 0.28 : 1;
+  const hasReadySubs = !node._expanded && subConceptsReadyKeys?.has(node.id);
 
   return (
     <g
@@ -323,6 +325,15 @@ function NodeCircle({
             strokeDasharray="3 3"
           />
         </>
+      )}
+
+      {/* Depth indicator: dashed ring for unexpanded nodes with ready sub-concepts */}
+      {hasReadySubs && (
+        <circle
+          r={drawR + 6} fill="none"
+          stroke={colors.accent} strokeOpacity={0.25} strokeWidth={1.5}
+          strokeDasharray="4 3"
+        />
       )}
 
       {/* Selected glow */}
@@ -349,6 +360,35 @@ function NodeCircle({
         stroke={colors.accent}
         strokeWidth={selected ? 2.5 : 1.5}
       />
+
+      {/* Sub-concepts inside the bubble */}
+      {node._expanded && node._subConcepts && (
+        <g>
+          {node._subConcepts.map((sc, i) => {
+            const count = node._subConcepts.length;
+            const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+            const orbitR = drawR * 0.55;
+            const subR = Math.min(16, drawR * 0.25);
+            const sx = Math.cos(angle) * orbitR;
+            const sy = Math.sin(angle) * orbitR;
+            const subColors = CONCEPT_COLORS[sc.color] || colors;
+            const isSubSelected = selectedId === sc.id;
+            return (
+              <g key={sc.id} data-node-id={sc.id}
+                 transform={`translate(${sx},${sy})`}
+                 style={{ cursor: 'pointer' }}>
+                {isSubSelected && (
+                  <circle r={subR + 3} fill="none" stroke={subColors.accent} strokeOpacity={0.5} strokeWidth={1.5} />
+                )}
+                <circle r={subR} fill={subColors.fill} stroke={subColors.accent} strokeWidth={isSubSelected ? 2 : 1} />
+                <text y={subR + 10} textAnchor="middle" className="sl-node-sublabel" style={{ fontSize: 8, fill: subColors.text }}>
+                  {sc.name.length > 12 ? sc.name.slice(0, 11) + '…' : sc.name}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+      )}
 
       {/* Reading order badge */}
       {showOrder && node._order != null && (
@@ -481,7 +521,7 @@ export default function GraphCanvas() {
 
   // Auto-assign layers from edge topology when concepts don't have them
   const layeredConcepts = useMemo(() => {
-    const base = concepts.filter(c => !c._isExpansion).map(c => ({
+    const base = concepts.map(c => ({
       ...c,
       fileCount: c.fileCount ?? (c.fileIds?.length || 0),
     }));
@@ -577,22 +617,16 @@ export default function GraphCanvas() {
     return orderedConcepts[0]?.id || null;
   }, [selectedId, readingIndex, orderedConcepts]);
 
-  // Build expansion concepts
+  // Attach expansion data to concepts for layout sizing
   const allConcepts = useMemo(() => {
-    const expansionConcepts = concepts.filter(c => c._isExpansion);
-    const withOrder = orderedConcepts.map(c => ({ ...c }));
-    if (expansionConcepts.length) {
-      expansionConcepts.forEach(ec => {
-        const parent = withOrder.find(p => p.id === ec._parentId);
-        withOrder.push({
-          ...ec,
-          _order: parent ? parent._order * 100 + 1 : 999,
-          layer: (parent?.layer ?? 0) + 0.5,
-        });
-      });
-    }
-    return withOrder;
-  }, [orderedConcepts, concepts]);
+    return orderedConcepts.map(c => {
+      const expansion = expansions[c.id];
+      if (expansion && expansion.subConcepts?.length) {
+        return { ...c, _expanded: true, _subConcepts: expansion.subConcepts };
+      }
+      return c;
+    });
+  }, [orderedConcepts, expansions]);
 
   // Build layout
   const layout = useMemo(() => {
@@ -724,7 +758,7 @@ export default function GraphCanvas() {
     let closestDistance = Infinity;
 
     layout.nodes.forEach(node => {
-      if (node._isExpansion || expansions[node.id] || !subConceptsReadyKeys.has(node.id)) return;
+      if (expansions[node.id] || !subConceptsReadyKeys.has(node.id)) return;
 
       const screenRadius = node.r * transform.k;
       const screenDiameter = screenRadius * 2;
@@ -927,6 +961,8 @@ export default function GraphCanvas() {
                     time={time}
                     showOrder={true}
                     showFileCount={true}
+                    subConceptsReadyKeys={subConceptsReadyKeys}
+                    selectedId={selectedId}
                     onClick={(e) => { e.stopPropagation(); handleSelect(n.id); }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();

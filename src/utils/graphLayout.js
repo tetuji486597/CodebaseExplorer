@@ -8,7 +8,12 @@ const MIN_NODE_GAP = 40; // minimum px between node edges (not centers)
 export function nodeRadius(c) {
   const byImportance = { critical: 50, important: 42, supporting: 34 };
   const base = byImportance[c.importance] || 38;
-  return base + Math.min(8, (c.fileCount || 0) * 0.6);
+  const r = base + Math.min(8, (c.fileCount || 0) * 0.6);
+  if (c._expanded && c._subConcepts?.length) {
+    const subCount = c._subConcepts.length;
+    return r + 20 + subCount * 10;
+  }
+  return r;
 }
 
 function estimateLabelWidth(name) {

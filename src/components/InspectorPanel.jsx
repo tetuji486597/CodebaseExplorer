@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
 import { API_BASE } from '../lib/api';
-import { FileCode2, Copy } from 'lucide-react';
+import { FileCode2, Copy, Layers } from 'lucide-react';
 import KeywordHighlighter from './KeywordHighlighter';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
@@ -28,9 +28,17 @@ export default function InspectorPanel() {
 
   const node = useMemo(() => {
     if (!selectedNode) return null;
-    if (selectedNode.type === 'concept') return concepts.find(c => c.id === selectedNode.id);
+    if (selectedNode.type === 'concept') {
+      const c = concepts.find(c => c.id === selectedNode.id);
+      if (c) return c;
+      for (const [parentId, exp] of Object.entries(expansions)) {
+        const sc = exp.subConcepts?.find(s => s.id === selectedNode.id);
+        if (sc) return { ...sc, _isExpansion: true, _parentId: parentId };
+      }
+      return null;
+    }
     return files.find(f => f.id === selectedNode.id);
-  }, [selectedNode, concepts, files]);
+  }, [selectedNode, concepts, files, expansions]);
 
   const concept = useMemo(() => {
     if (!node) return null;
@@ -56,7 +64,7 @@ export default function InspectorPanel() {
 
   // Derive reading order + index
   const orderedConcepts = useMemo(() => {
-    const base = concepts.filter(c => !c._isExpansion);
+    const base = concepts;
     if (!base.length) return [];
     const path = explorationPath;
     if (path?.length) {
@@ -163,15 +171,6 @@ export default function InspectorPanel() {
     if (prev) setSelectedNode({ type: 'concept', id: prev.id });
   }, [guidedMode, retreatGuided, orderedConcepts, readingIndex, setSelectedNode]);
 
-  const handleExpand = useCallback(() => {
-    if (!selectedNode) return;
-    if (isExpanded) {
-      collapseConcept(selectedNode.id);
-    } else {
-      fetchSubConcepts(selectedNode.id);
-    }
-  }, [selectedNode, isExpanded, collapseConcept, fetchSubConcepts]);
-
   const handleCopyPrompt = useCallback(() => {
     const name = node?.name || 'this concept';
     const prompt = `Explain the [${name}] concept in this codebase — what does it do, what files are involved, and how does it connect to other parts of the system?`;
@@ -205,6 +204,24 @@ export default function InspectorPanel() {
           </svg>
         </button>
       </div>
+
+      {/* Breadcrumb for sub-concepts */}
+      {node._isExpansion && node._parentId && (
+        <button
+          onClick={() => setSelectedNode({ type: 'concept', id: node._parentId })}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 0', margin: 0, marginTop: 4,
+            fontSize: 11, fontWeight: 500,
+            color: 'var(--sl-ink-3)', background: 'none', border: 'none',
+            cursor: 'pointer', transition: 'color 120ms',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = colors.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--sl-ink-3)'; }}
+        >
+          {concepts.find(c => c.id === node._parentId)?.name || 'Parent'} ›
+        </button>
+      )}
 
       {/* Title */}
       <h2 className="sl-insp-title" style={{ color: colors.text }} data-quote-source={node.name}>{node.name}</h2>
@@ -371,21 +388,12 @@ export default function InspectorPanel() {
         </div>
       )}
 
-      {/* Expand button */}
-      {hasSubs && selectedNode.type === 'concept' && (
-        <button
-          className="sl-insp-expand"
-          onClick={handleExpand}
-          style={{ borderColor: colors.accent, color: colors.accent, marginTop: 4 }}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            {isExpanded
-              ? <path d="M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              : <><path d="M2 6h8M6 2v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></>
-            }
-          </svg>
-          {isExpanded ? 'Collapse sub-concepts' : 'Expand into sub-concepts'}
-        </button>
+      {/* Zoom hint for sub-concepts */}
+      {hasSubs && selectedNode.type === 'concept' && !node?._isExpansion && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 11, color: 'var(--sl-ink-3)' }}>
+          <Layers size={12} strokeWidth={1.5} />
+          {isExpanded ? 'Zoom out to collapse' : 'Zoom in to explore sub-concepts'}
+        </div>
       )}
 
       {/* Copy prompt */}
