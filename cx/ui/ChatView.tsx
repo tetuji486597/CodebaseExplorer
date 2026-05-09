@@ -17,6 +17,7 @@ interface ChatViewProps {
   sessionId: string | null;
   onBack: () => void;
   repoDir?: string;
+  initialQuery?: string;
 }
 
 function cleanForDisplay(text: string): string {
@@ -26,7 +27,7 @@ function cleanForDisplay(text: string): string {
   return clean;
 }
 
-export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDir }: ChatViewProps) {
+export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDir, initialQuery }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -34,6 +35,7 @@ export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDi
   const activeSessionId = useRef(sessionId || `${projectId.slice(0, 8)}-${Date.now()}`);
   const [localFiles, setLocalFiles] = useState<Record<string, string>>({});
   const [filesLoaded, setFilesLoaded] = useState(false);
+  const [initialSent, setInitialSent] = useState(false);
 
   useEffect(() => {
     const dir = repoDir || process.cwd();
@@ -42,6 +44,13 @@ export function ChatView({ projectId, repoName, token, sessionId, onBack, repoDi
       setFilesLoaded(true);
     }).catch(() => { setFilesLoaded(true); });
   }, [repoDir]);
+
+  useEffect(() => {
+    if (initialQuery && filesLoaded && !initialSent) {
+      setInitialSent(true);
+      sendMessage(initialQuery);
+    }
+  }, [filesLoaded, initialQuery, initialSent]);
 
   useEffect(() => {
     if (sessionId) {

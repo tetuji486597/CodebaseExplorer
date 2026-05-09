@@ -7,11 +7,16 @@ interface FooterProps {
 }
 
 export function Footer({ hints }: FooterProps) {
+  if (hints.length === 0) return null;
+
   return (
-    <Box marginTop={1} flexWrap="wrap">
-      <Text color={colors.textTertiary}>
-        {hints.map(h => `${h.key}:${h.label}`).join('  ')}
-      </Text>
+    <Box marginTop={1} paddingLeft={1}>
+      {hints.map((h, i) => (
+        <Box key={h.key} marginRight={2}>
+          <Text color={colors.accent}>{h.key}</Text>
+          <Text color={colors.textTertiary}> {h.label}</Text>
+        </Box>
+      ))}
     </Box>
   );
 }

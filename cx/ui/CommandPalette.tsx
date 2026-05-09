@@ -6,14 +6,19 @@ import { colors, symbols } from './theme.js';
 interface Command {
   id: string;
   label: string;
+  key: string;
   description: string;
 }
 
 const commands: Command[] = [
-  { id: 'chat', label: 'chat', description: 'Start a new conversation' },
-  { id: 'history', label: 'history', description: 'Browse past conversations' },
-  { id: 'analyze', label: 'analyze', description: 'Re-analyze current project' },
-  { id: 'quit', label: 'quit', description: 'Exit gui' },
+  { id: 'chat', label: 'New Chat', key: 'c', description: 'Start a new conversation' },
+  { id: 'history', label: 'History', key: 'h', description: 'Browse past conversations' },
+  { id: 'open', label: 'Open', key: 'o', description: 'Open project in browser' },
+  { id: 'share', label: 'Share', key: 's', description: 'Copy share link' },
+  { id: 'projects', label: 'Projects', key: 'p', description: 'Switch to another project' },
+  { id: 'analyze', label: 'Re-analyze', key: 'r', description: 'Re-run analysis on current project' },
+  { id: 'logout', label: 'Logout', key: '', description: 'Clear credentials and sign out' },
+  { id: 'quit', label: 'Quit', key: 'q', description: 'Exit gui' },
 ];
 
 interface CommandPaletteProps {
@@ -82,8 +87,11 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                 {isSelected ? symbols.cursor : ' '}
               </Text>
               <Text color={isSelected ? colors.textPrimary : colors.textSecondary} bold={isSelected}>
-                {' '}{cmd.label.padEnd(14)}
+                {' '}{cmd.label.padEnd(16)}
               </Text>
+              {cmd.key && (
+                <Text color={colors.textTertiary}>[{cmd.key}]  </Text>
+              )}
               <Text color={colors.textTertiary}>{cmd.description}</Text>
             </Box>
           );

@@ -54,14 +54,6 @@ export function ConversationList({ sessions, isActive, onSelect, onNewChat }: Co
     return (
       <Box flexDirection="column">
         <Text color={colors.textTertiary}>No conversations yet.</Text>
-        <Box marginTop={1}>
-          <Text color={colors.accent}>n</Text>
-          <Text color={colors.textTertiary}> new chat  </Text>
-          <Text color={colors.accent}>/</Text>
-          <Text color={colors.textTertiary}> commands  </Text>
-          <Text color={colors.accent}>q</Text>
-          <Text color={colors.textTertiary}> quit</Text>
-        </Box>
       </Box>
     );
   }
@@ -86,16 +78,6 @@ export function ConversationList({ sessions, isActive, onSelect, onNewChat }: Co
           </Box>
         );
       })}
-      <Box marginTop={1}>
-        <Text color={colors.accent}>enter</Text>
-        <Text color={colors.textTertiary}> resume  </Text>
-        <Text color={colors.accent}>n</Text>
-        <Text color={colors.textTertiary}> new chat  </Text>
-        <Text color={colors.accent}>o</Text>
-        <Text color={colors.textTertiary}> open in browser  </Text>
-        <Text color={colors.accent}>q</Text>
-        <Text color={colors.textTertiary}> quit</Text>
-      </Box>
     </Box>
   );
 }

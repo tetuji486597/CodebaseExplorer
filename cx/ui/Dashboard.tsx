@@ -10,6 +10,7 @@ interface DashboardProps {
   projectId: string;
   repoName: string;
   token: string;
+  toast?: string | null;
   onStartChat: () => void;
   onResumeSession: (sessionId: string) => void;
 }
@@ -21,7 +22,7 @@ interface Session {
   preview: string;
 }
 
-export function Dashboard({ projectId, repoName, token, onStartChat, onResumeSession }: DashboardProps) {
+export function Dashboard({ projectId, repoName, token, toast, onStartChat, onResumeSession }: DashboardProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [conceptCount, setConceptCount] = useState<number | undefined>(undefined);
   const [status, setStatus] = useState<string>('loading');
@@ -83,6 +84,11 @@ export function Dashboard({ projectId, repoName, token, onStartChat, onResumeSes
           />
 
         </>
+      )}
+      {toast && (
+        <Box marginTop={1} marginLeft={1}>
+          <Text color={colors.green}>{toast}</Text>
+        </Box>
       )}
     </Box>
   );
