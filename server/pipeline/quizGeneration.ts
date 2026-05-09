@@ -101,7 +101,21 @@ Generate 2-3 questions per concept, covering different question types and diffic
         continue;
       }
 
-      const questionRows = result.questions.map((q) => ({
+      const batchKeySet = new Set(batchConceptIds);
+      const validQuestions = result.questions.filter((q) => {
+        if (!batchKeySet.has(q.concept_id)) {
+          console.warn(`[quiz-validation] Question references unknown concept ${q.concept_id}, skipping`);
+          return false;
+        }
+        return true;
+      });
+
+      if (!validQuestions.length) {
+        batchesFailed++;
+        continue;
+      }
+
+      const questionRows = validQuestions.map((q) => ({
         project_id: projectId,
         concept_key: q.concept_id,
         question_type: q.question_type,
@@ -121,7 +135,7 @@ Generate 2-3 questions per concept, covering different question types and diffic
         continue;
       }
 
-      totalGenerated += result.questions.length;
+      totalGenerated += validQuestions.length;
       console.log(`[quiz] Batch ${batchIndex}: ${result.questions.length} questions for [${batchConceptIds.join(', ')}]`);
     } catch (err) {
       console.error(`[quiz] Batch ${batchIndex} failed for [${batchConceptIds.join(', ')}]:`, err);
@@ -130,7 +144,7 @@ Generate 2-3 questions per concept, covering different question types and diffic
     }
   }
 
-  const totalBatches = Math.ceil(synthesis.concepts.length / BATCH_SIZE);
+  const totalBatches = Math.ceil(synthesis.concepts.length / BATCH_SIZE) || 1;
   if (totalGenerated === 0) {
     console.error(`[quiz] All ${totalBatches} batches failed — 0 questions generated for project ${projectId}`);
   } else if (batchesFailed > 0) {
@@ -138,4 +152,77 @@ Generate 2-3 questions per concept, covering different question types and diffic
   } else {
     console.log(`[quiz] Complete: ${totalGenerated} questions across ${totalBatches} batches for project ${projectId}`);
   }
+}
+
+export async function generateQuizForConcept(
+  projectId: string,
+  conceptKey: string,
+  synthesis: ConceptSynthesisResult,
+  fileAnalyses: FileAnalysis[],
+): Promise<QuizQuestion[]> {
+  const concept = synthesis.concepts.find((c) => c.id === conceptKey);
+  if (!concept) return [];
+
+  const { data: existing } = await supabase
+    .from('quiz_questions')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('concept_key', conceptKey)
+    .limit(1);
+
+  if (existing?.length) return [];
+
+  const edgeSummary = synthesis.edges
+    .filter((e) => e.source === conceptKey || e.target === conceptKey)
+    .map((e) => `  ${e.source} --[${e.relationship}]--> ${e.target} (${e.strength})`)
+    .join('\n');
+
+  const relevantFiles = fileAnalyses
+    .filter((f) => concept.file_ids.includes(f.path))
+    .slice(0, 10)
+    .map((f) => `- ${f.path}: ${f.purpose} (exports: ${f.key_exports?.map((e) => e.name).join(', ') || 'none'})`)
+    .join('\n');
+
+  const result = await callClaudeStructured<{ questions: QuizQuestion[] }>({
+    system: QUIZ_SYSTEM_PROMPT,
+    operation: 'quiz_generation_lazy',
+    projectId,
+    prompt: `Generate quiz questions for this concept:
+
+CONCEPT:
+- ${concept.id}: "${concept.name}" (${concept.importance}) - ${concept.one_liner}
+  Files: ${concept.file_ids.join(', ')}
+
+RELATIONSHIPS:
+${edgeSummary || '(none)'}
+
+KEY FILES:
+${relevantFiles || '(none)'}
+
+Generate 2-3 questions covering different question types and difficulty levels.`,
+    schema: quizGenerationSchema,
+    schemaName: 'quiz_generation',
+    maxTokens: 2048,
+    model: 'fast',
+  });
+
+  const questions = (result.questions || []).filter((q) => q.concept_id === conceptKey);
+  if (!questions.length) return [];
+
+  const rows = questions.map((q) => ({
+    project_id: projectId,
+    concept_key: q.concept_id,
+    question_type: q.question_type,
+    difficulty: q.difficulty,
+    question_text: q.question_text,
+    code_snippet: q.code_snippet || null,
+    options: q.options,
+    correct_answer: q.correct_answer,
+    explanation: q.explanation,
+    related_file_paths: q.related_file_paths || [],
+  }));
+
+  await supabase.from('quiz_questions').insert(rows);
+  console.log(`[quiz-lazy] Generated ${questions.length} questions for concept ${conceptKey}`);
+  return questions;
 }

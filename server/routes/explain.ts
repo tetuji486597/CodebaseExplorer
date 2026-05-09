@@ -4,6 +4,9 @@ import { supabase } from '../db/supabase.js';
 import { streamClaude } from '../ai/claude.js';
 import { retrieveChunks } from '../rag/retriever.js';
 import { embed } from '../rag/embedder.js';
+import { loadPipelineContext } from '../pipeline/pipelineContext.js';
+import { generateDepthForConcept } from '../pipeline/depthMapping.js';
+import { prefetchForConcept } from '../pipeline/prefetch.js';
 
 const app = new Hono();
 
@@ -77,6 +80,26 @@ app.post('/', async (c) => {
       const preGenerated = explanationByLevel[level];
       if (preGenerated) {
         return c.json({ explanation: preGenerated, concept });
+      }
+
+      // Lazy generation: depth not pre-generated, generate on first visit
+      try {
+        const context = await loadPipelineContext(projectId);
+        if (context) {
+          const depth = await generateDepthForConcept(projectId, conceptKey, context.synthesis, context.fileAnalyses);
+          if (depth) {
+            prefetchForConcept(projectId, conceptKey, context);
+            const lazyExplanation = level === 'advanced' ? depth.advanced
+              : level === 'intermediate' ? depth.intermediate
+              : depth.beginner;
+            return c.json({
+              explanation: lazyExplanation,
+              concept: { ...concept, beginner_explanation: depth.beginner, intermediate_explanation: depth.intermediate, advanced_explanation: depth.advanced },
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`[explain] Lazy depth generation failed for ${conceptKey}:`, err);
       }
     }
 

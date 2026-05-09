@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { supabase } from '../db/supabase.js';
+import { loadPipelineContext } from '../pipeline/pipelineContext.js';
+import { generateQuizForConcept } from '../pipeline/quizGeneration.js';
 
 const app = new Hono();
 
@@ -98,8 +100,38 @@ app.get('/:projectId/due', async (c) => {
       return c.json({ questions, gateType: 'review' });
     }
 
-    // Questions don't exist yet (quiz generation still running).
-    // Reschedule these concepts so they trigger on the next advance.
+    // Questions don't exist yet — try on-demand generation
+    const context = await loadPipelineContext(projectId);
+    if (context) {
+      for (const s of dueStates) {
+        try {
+          await generateQuizForConcept(projectId, s.concept_key, context.synthesis, context.fileAnalyses);
+        } catch {
+          // Non-fatal — will reschedule below
+        }
+      }
+
+      // Re-fetch after generation
+      const { data: retryQuestions } = await supabase
+        .from('quiz_questions')
+        .select('*')
+        .eq('project_id', projectId)
+        .in('concept_key', conceptKeys);
+
+      if (retryQuestions?.length) {
+        const questions: typeof retryQuestions = [];
+        const usedConcepts = new Set<string>();
+        for (const q of retryQuestions) {
+          if (usedConcepts.has(q.concept_key)) continue;
+          questions.push(q);
+          usedConcepts.add(q.concept_key);
+          if (questions.length >= 3) break;
+        }
+        return c.json({ questions, gateType: 'review' });
+      }
+    }
+
+    // Generation failed or no context — reschedule
     for (const s of dueStates) {
       await supabase
         .from('quiz_state')

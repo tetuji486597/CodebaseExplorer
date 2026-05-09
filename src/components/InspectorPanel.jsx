@@ -2,8 +2,9 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import useStore from '../store/useStore';
 import { CONCEPT_COLORS } from '../data/sampleData';
 import { API_BASE } from '../lib/api';
-import { FileCode2, Copy, Layers } from 'lucide-react';
+import { FileCode2, Copy, Layers, SkipForward } from 'lucide-react';
 import KeywordHighlighter from './KeywordHighlighter';
+import { getTourChapterProgress } from '../lib/tourPath';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const LEVEL_LABELS = { beginner: 'Conceptual', intermediate: 'Applied', advanced: 'Under the Hood' };
@@ -16,10 +17,13 @@ export default function InspectorPanel() {
     activeDepthLevel, setActiveDepthLevel,
     guidedMode, guidedPosition, explorationPath,
     advanceGuided, retreatGuided, exitGuidedMode,
+    skipToNextChapter, tourPath, tourPosition,
     setSelectedNode,
     quizGateActive,
     expansions, fetchSubConcepts, collapseConcept,
     subConceptsReadyKeys,
+    drillInto, revealChildren, subConceptsCache, subConceptExpandable,
+    focusNodeId, childrenRevealed,
   } = useStore();
 
   const [explanation, setExplanation] = useState(null);
@@ -31,14 +35,24 @@ export default function InspectorPanel() {
     if (selectedNode.type === 'concept') {
       const c = concepts.find(c => c.id === selectedNode.id);
       if (c) return c;
-      for (const [parentId, exp] of Object.entries(expansions)) {
-        const sc = exp.subConcepts?.find(s => s.id === selectedNode.id);
+      const searchExpansions = (targetId) => {
+        for (const [parentId, exp] of Object.entries(expansions)) {
+          const sc = exp.subConcepts?.find(s => s.id === targetId);
+          if (sc) return { ...sc, _isExpansion: true, _parentId: parentId };
+        }
+        return null;
+      };
+      const found = searchExpansions(selectedNode.id);
+      if (found) return found;
+      // Search subConceptsCache (circle-pack view stores sub-concepts here)
+      for (const [parentId, cached] of Object.entries(subConceptsCache)) {
+        const sc = cached.subConcepts?.find(s => s.id === selectedNode.id);
         if (sc) return { ...sc, _isExpansion: true, _parentId: parentId };
       }
       return null;
     }
     return files.find(f => f.id === selectedNode.id);
-  }, [selectedNode, concepts, files, expansions]);
+  }, [selectedNode, concepts, files, expansions, subConceptsCache]);
 
   const concept = useMemo(() => {
     if (!node) return null;
@@ -85,6 +99,9 @@ export default function InspectorPanel() {
     : -1;
 
   const totalConcepts = orderedConcepts.length;
+  const tourProgress = useMemo(() =>
+    guidedMode && tourPath ? getTourChapterProgress(tourPath, tourPosition) : null,
+  [guidedMode, tourPath, tourPosition]);
   const isExpanded = selectedNode?.type === 'concept' && !!expansions[selectedNode.id];
   const hasSubs = selectedNode?.type === 'concept'
     && (subConceptsReadyKeys.has(selectedNode.id) || !!expansions[selectedNode.id]);
@@ -189,14 +206,29 @@ export default function InspectorPanel() {
       {/* Head row */}
       <div className="sl-insp-head">
         <div className="sl-insp-crumb">
-          {orderNum != null && (
-            <span className="sl-insp-order-chip" style={{ background: colors.accent }}>
-              {orderNum}
-            </span>
+          {tourProgress ? (
+            <>
+              <span className="sl-insp-order-chip" style={{ background: colors.accent }}>
+                {tourProgress.chapterIndex + 1}
+              </span>
+              <span className="sl-insp-step">
+                {tourProgress.isChapterIntro
+                  ? `Chapter ${tourProgress.chapterIndex + 1} of ${tourProgress.totalChapters}`
+                  : `Section ${tourProgress.sectionIndex + 1} of ${tourProgress.totalSections}`}
+              </span>
+            </>
+          ) : orderNum != null ? (
+            <>
+              <span className="sl-insp-order-chip" style={{ background: colors.accent }}>
+                {orderNum}
+              </span>
+              <span className="sl-insp-step">
+                Step {orderNum} of {totalConcepts}
+              </span>
+            </>
+          ) : (
+            <span className="sl-insp-step">{selectedNode.type}</span>
           )}
-          <span className="sl-insp-step">
-            {orderNum != null ? `Step ${orderNum} of ${totalConcepts}` : selectedNode.type}
-          </span>
         </div>
         <button className="sl-insp-close" onClick={close} aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 14 14">
@@ -237,8 +269,8 @@ export default function InspectorPanel() {
         <span>{(node.fileCount || conceptFiles.length || 0)} files</span>
       </div>
 
-      {/* Depth selector — only when multi-level explanations exist */}
-      {selectedNode.type === 'concept' && node.beginner_explanation && node.intermediate_explanation && node.advanced_explanation && (
+      {/* Depth selector — always shown for concepts, with loading state for unavailable levels */}
+      {selectedNode.type === 'concept' && (
         <div
           style={{
             display: 'flex',
@@ -250,27 +282,35 @@ export default function InspectorPanel() {
             border: '1px solid var(--sl-line)',
           }}
         >
-          {LEVELS.map(level => (
-            <button
-              key={level}
-              onClick={() => setActiveDepthLevel(level)}
-              style={{
-                flex: 1,
-                fontSize: 11,
-                fontWeight: 500,
-                padding: '5px 6px',
-                borderRadius: 4,
-                background: activeLevel === level ? 'var(--sl-card)' : 'transparent',
-                color: activeLevel === level ? colors.text : 'var(--sl-ink-3)',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 150ms ease-out',
-                boxShadow: activeLevel === level ? 'var(--sl-shadow-sm)' : 'none',
-              }}
-            >
-              {LEVEL_LABELS[level]}
-            </button>
-          ))}
+          {LEVELS.map(level => {
+            const levelKey = `${level}_explanation`;
+            const hasLevel = !!node[levelKey];
+            return (
+              <button
+                key={level}
+                onClick={() => setActiveDepthLevel(level)}
+                style={{
+                  flex: 1,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '5px 6px',
+                  borderRadius: 4,
+                  background: activeLevel === level ? 'var(--sl-card)' : 'transparent',
+                  color: activeLevel === level ? colors.text : 'var(--sl-ink-3)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease-out',
+                  boxShadow: activeLevel === level ? 'var(--sl-shadow-sm)' : 'none',
+                  opacity: hasLevel ? 1 : 0.6,
+                }}
+              >
+                {LEVEL_LABELS[level]}
+                {!hasLevel && activeLevel === level && (
+                  <span style={{ display: 'inline-block', width: 4, height: 4, marginLeft: 4, borderRadius: '50%', background: colors.accent, animation: 'processing-dot 1.4s infinite', verticalAlign: 'middle' }} />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -388,12 +428,41 @@ export default function InspectorPanel() {
         </div>
       )}
 
-      {/* Zoom hint for sub-concepts */}
-      {hasSubs && selectedNode.type === 'concept' && !node?._isExpansion && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 11, color: 'var(--sl-ink-3)' }}>
-          <Layers size={12} strokeWidth={1.5} />
-          {isExpanded ? 'Zoom out to collapse' : 'Zoom in to explore sub-concepts'}
-        </div>
+      {/* Drill-into button for concepts with sub-concepts */}
+      {selectedNode?.type === 'concept' && (
+        hasSubs || subConceptExpandable.has(selectedNode.id) || subConceptsCache[selectedNode.id]?.subConcepts?.length > 0
+      ) && (
+        <button
+          onClick={() => {
+            if (selectedNode.id === focusNodeId && !childrenRevealed) {
+              revealChildren();
+            } else {
+              drillInto(selectedNode.id);
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 14px',
+            marginTop: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#fff',
+            background: colors.accent,
+            border: 'none',
+            borderRadius: 8,
+            cursor: 'pointer',
+            transition: 'all 150ms',
+            width: '100%',
+            justifyContent: 'center',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.15)'; }}
+          onMouseLeave={e => { e.currentTarget.style.filter = 'none'; }}
+        >
+          <Layers size={14} strokeWidth={1.75} />
+          Explore sub-concepts
+        </button>
       )}
 
       {/* Copy prompt */}
@@ -421,13 +490,33 @@ export default function InspectorPanel() {
         Copy prompt
       </button>
 
+      {/* Skip to next chapter (only in tour section mode) */}
+      {tourProgress && !tourProgress.isChapterIntro && tourProgress.chapterIndex < tourProgress.totalChapters - 1 && (
+        <button
+          onClick={skipToNextChapter}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px', marginTop: 4,
+            fontSize: 11, fontWeight: 500,
+            color: 'var(--sl-ink-3)', background: 'transparent',
+            border: '1px solid var(--sl-line)', borderRadius: 6,
+            cursor: 'pointer', transition: 'all 120ms',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(41,38,27,0.04)'; e.currentTarget.style.color = 'var(--sl-ink)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sl-ink-3)'; }}
+        >
+          <SkipForward size={11} strokeWidth={1.75} />
+          Skip to next chapter
+        </button>
+      )}
+
       {/* Divider + Nav */}
       <div className="sl-insp-divider" />
       <div className="sl-insp-nav">
         <button
           className="sl-insp-nav-btn"
           onClick={handlePrev}
-          disabled={readingIndex <= 0}
+          disabled={tourProgress ? tourPosition <= 0 : readingIndex <= 0}
         >
           <svg width="12" height="12" viewBox="0 0 12 12">
             <path d="M8 2L3 6l5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -437,10 +526,12 @@ export default function InspectorPanel() {
         <button
           className="sl-insp-nav-btn primary"
           onClick={handleNext}
-          disabled={readingIndex === totalConcepts - 1}
+          disabled={tourProgress
+            ? tourPosition >= (tourPath?.stops?.length || 1) - 1
+            : readingIndex === totalConcepts - 1}
           style={{ background: colors.accent }}
         >
-          Next step
+          {tourProgress?.isChapterIntro && tourProgress.totalSections > 0 ? 'Explore sections' : 'Next step'}
           <svg width="12" height="12" viewBox="0 0 12 12">
             <path d="M4 2l5 4-5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>

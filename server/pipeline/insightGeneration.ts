@@ -65,6 +65,11 @@ Return JSON with an "insights" array. Each insight needs: title, category (archi
     console.log(`Insight generation raw result type: ${typeof result}, keys: ${Object.keys(result || {})}`);
     // Handle case where Claude returns the array directly or wraps it
     const insights = Array.isArray(result) ? result : (result.insights || []);
+    const validConceptIds = new Set(synthesis.concepts.map((c) => c.id));
+    insights.forEach((insight) => {
+      insight.related_concept_ids = (insight.related_concept_ids || []).filter((id: string) => validConceptIds.has(id));
+      insight.requires_understanding = (insight.requires_understanding || []).filter((id: string) => validConceptIds.has(id));
+    });
     console.log(`Generated ${insights.length} insights`);
     if (insights.length > 0) {
       const insightRows = insights.map((insight) => ({
@@ -86,4 +91,21 @@ Return JSON with an "insights" array. Each insight needs: title, category (archi
   } catch (err) {
     console.error('Insight generation failed:', err);
   }
+}
+
+export async function generateInsightsIfMissing(
+  projectId: string,
+  synthesis: ConceptSynthesisResult,
+  fileAnalyses: FileAnalysis[],
+): Promise<boolean> {
+  const { data: existing } = await supabase
+    .from('insights')
+    .select('id')
+    .eq('project_id', projectId)
+    .limit(1);
+
+  if (existing?.length) return false;
+
+  await runInsightGeneration(projectId, synthesis, fileAnalyses);
+  return true;
 }

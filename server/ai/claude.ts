@@ -20,9 +20,16 @@ function logUsage(
   outputTokens: number,
   operation?: string,
   projectId?: string,
+  cacheCreationTokens?: number,
+  cacheReadTokens?: number,
 ): void {
   const pricing = PRICING[model] || PRICING[MAIN_MODEL];
-  const cost = inputTokens * pricing.input + outputTokens * pricing.output;
+  const uncachedInput = inputTokens - (cacheCreationTokens || 0) - (cacheReadTokens || 0);
+  const cost =
+    uncachedInput * pricing.input +
+    (cacheCreationTokens || 0) * pricing.input * 1.25 +
+    (cacheReadTokens || 0) * pricing.input * 0.1 +
+    outputTokens * pricing.output;
   supabase
     .from('api_usage')
     .insert({
@@ -32,6 +39,8 @@ function logUsage(
       output_tokens: outputTokens,
       cost_usd: cost,
       operation: operation || 'unknown',
+      cache_creation_tokens: cacheCreationTokens || 0,
+      cache_read_tokens: cacheReadTokens || 0,
     })
     .then(({ error }) => {
       if (error) console.error('[usage] Failed to log:', error.message);
@@ -58,7 +67,13 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
       const response = await anthropic.messages.create({
         model,
         max_tokens: opts.maxTokens || 4096,
-        system: opts.system,
+        system: [
+          {
+            type: 'text' as const,
+            text: opts.system,
+            cache_control: { type: 'ephemeral' as const },
+          },
+        ],
         messages: [{ role: 'user', content: opts.prompt }],
         tools: [
           {
@@ -69,7 +84,7 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
         ],
         tool_choice: { type: 'tool', name: opts.schemaName },
       }, {
-        timeout: 60_000, // 60s — fail fast rather than hang for 10min default
+        timeout: 60_000,
       });
 
       const toolBlock = response.content.find((b) => b.type === 'tool_use');
@@ -78,7 +93,12 @@ export async function callClaudeStructured<T>(opts: StructuredCallOptions): Prom
       }
 
       if (response.usage) {
-        logUsage(model, response.usage.input_tokens, response.usage.output_tokens, opts.operation, opts.projectId);
+        const usage = response.usage as any;
+        logUsage(
+          model, usage.input_tokens, usage.output_tokens,
+          opts.operation, opts.projectId,
+          usage.cache_creation_input_tokens, usage.cache_read_input_tokens,
+        );
       }
 
       const input = toolBlock.input as T;
@@ -120,7 +140,13 @@ export async function streamClaude(opts: {
   const stream = anthropic.messages.stream({
     model,
     max_tokens: opts.maxTokens || 1024,
-    system: opts.system,
+    system: [
+      {
+        type: 'text' as const,
+        text: opts.system,
+        cache_control: { type: 'ephemeral' as const },
+      },
+    ],
     messages: opts.messages,
   });
 
@@ -134,7 +160,12 @@ export async function streamClaude(opts: {
       try {
         const finalMessage = await stream.finalMessage();
         if (finalMessage.usage) {
-          logUsage(model, finalMessage.usage.input_tokens, finalMessage.usage.output_tokens, opts.operation, opts.projectId);
+          const usage = finalMessage.usage as any;
+          logUsage(
+            model, usage.input_tokens, usage.output_tokens,
+            opts.operation, opts.projectId,
+            usage.cache_creation_input_tokens, usage.cache_read_input_tokens,
+          );
         }
       } catch {}
     },

@@ -2,14 +2,13 @@ import { supabase } from '../db/supabase.js';
 import { uploadFileContentsBatch } from '../db/fileStorage.js';
 import { runFileAnalysis } from './fileAnalysis.js';
 import { runConceptSynthesis } from './conceptSynthesis.js';
-import { runDepthMapping } from './depthMapping.js';
-import { runInsightGeneration } from './insightGeneration.js';
 import { runEmbedding } from './embedding.js';
-// proactiveSeeding replaced with deterministic inline sort
 import { runConceptMapping } from './conceptMapping.js';
-import { runQuizGeneration } from './quizGeneration.js';
+import { callClaudeStructured } from '../ai/claude.js';
+import { proactiveSeedingSchema } from '../ai/schemas.js';
 import { runSubConceptGeneration } from './subConceptGeneration.js';
 import { updateProgress } from './progress.js';
+import { storePipelineContext } from './pipelineContext.js';
 
 export interface PipelineInput {
   fileTree: any;
@@ -138,18 +137,54 @@ export async function runCorePipeline(
     return null;
   }
 
-  // Generate exploration path deterministically
-  const explorationPath = synthesis.concepts
-    .sort((a: any, b: any) => {
-      const order: Record<string, number> = { critical: 0, important: 1, supporting: 2 };
-      return (order[a.importance] ?? 2) - (order[b.importance] ?? 2);
-    })
-    .map((c: any) => c.id);
+  // Generate pedagogical exploration path via AI
+  let explorationPath: string[];
+  try {
+    const conceptSummary = synthesis.concepts
+      .map((c: any) => `${c.id}: ${c.name} (${c.importance}) - ${c.one_liner}`)
+      .join('\n');
+    const edgeSummary = synthesis.edges
+      .map((e: any) => `${e.source} → ${e.target}: ${e.relationship}`)
+      .join('\n');
 
-  if (synthesis.suggested_starting_concept && explorationPath.includes(synthesis.suggested_starting_concept)) {
-    const idx = explorationPath.indexOf(synthesis.suggested_starting_concept);
-    explorationPath.splice(idx, 1);
-    explorationPath.unshift(synthesis.suggested_starting_concept);
+    const pathResult = await callClaudeStructured<{ exploration_path: string[]; reasoning: string }>({
+      system: `Generate an optimal exploration path through a codebase's concept map for a student learning this codebase for the first time.
+The path should tell a story: start with the entry point or most foundational concept, then introduce each concept in an order where the student already understands its prerequisites.
+Consider: which concepts depend on understanding others first? What's the natural learning progression? Start broad (entry points, core data models) then move to specifics (utilities, error handling).
+Respond with ONLY valid JSON, no markdown.`,
+      prompt: `Given these concepts and relationships, determine the best pedagogical order:
+
+Concepts:
+${conceptSummary}
+
+Relationships:
+${edgeSummary}
+
+Suggested starting concept: ${synthesis.suggested_starting_concept}
+
+Return JSON with: exploration_path (array of concept ids in order), reasoning (why this order).`,
+      schema: proactiveSeedingSchema,
+      schemaName: 'proactive_seeding',
+      maxTokens: 1024,
+      model: 'fast',
+      operation: 'exploration_path_ordering',
+      projectId,
+    });
+    explorationPath = pathResult.exploration_path;
+    console.log(`AI exploration path: ${explorationPath.join(' → ')} — ${pathResult.reasoning}`);
+  } catch (err) {
+    console.error('AI path ordering failed, falling back to importance sort:', err);
+    explorationPath = synthesis.concepts
+      .sort((a: any, b: any) => {
+        const order: Record<string, number> = { critical: 0, important: 1, supporting: 2 };
+        return (order[a.importance] ?? 2) - (order[b.importance] ?? 2);
+      })
+      .map((c: any) => c.id);
+    if (synthesis.suggested_starting_concept && explorationPath.includes(synthesis.suggested_starting_concept)) {
+      const idx = explorationPath.indexOf(synthesis.suggested_starting_concept);
+      explorationPath.splice(idx, 1);
+      explorationPath.unshift(synthesis.suggested_starting_concept);
+    }
   }
 
   await supabase.from('user_state').insert({
@@ -166,8 +201,9 @@ export async function runCorePipeline(
 }
 
 /**
- * Stages 4-7: Background enrichment (depth mapping, insights, quizzes, embeddings, concept mapping).
- * Fire-and-forget after core pipeline completes.
+ * Background enrichment: eager stages only (embeddings, concept mapping, sub-concepts).
+ * Depth mapping, insights, and quizzes are now lazy — generated on first visit.
+ * Pipeline context is stored so lazy endpoints can generate content without re-running the pipeline.
  */
 export function runEnrichment(
   projectId: string,
@@ -176,18 +212,45 @@ export function runEnrichment(
   fileAnalyses: any[]
 ): void {
   const enrichmentStart = Date.now();
+
+  const updateStage = async (stage: string, status: 'running' | 'done' | 'failed') => {
+    const { data: project } = await supabase
+      .from('projects')
+      .select('pipeline_progress')
+      .eq('id', projectId)
+      .single();
+
+    const progress = project?.pipeline_progress || {};
+    const stages = progress.enrichment_stages || {};
+    stages[stage] = status;
+
+    await supabase
+      .from('projects')
+      .update({ pipeline_progress: { ...progress, enrichment_stages: stages } })
+      .eq('id', projectId);
+  };
+
+  const tracked = (stage: string, fn: Promise<void>) =>
+    fn
+      .then(() => updateStage(stage, 'done'))
+      .catch((err) => {
+        console.error(`[enrichment] ${stage} failed:`, err);
+        updateStage(stage, 'failed');
+      });
+
+  storePipelineContext(projectId, synthesis, fileAnalyses).catch((err) =>
+    console.error('[enrichment] Failed to store pipeline context:', err)
+  );
+
   Promise.all([
-    runDepthMapping(projectId, synthesis, fileAnalyses),
-    runInsightGeneration(projectId, synthesis, fileAnalyses),
-    runQuizGeneration(projectId, synthesis, fileAnalyses),
-    runConceptMapping(projectId),
-    runEmbedding(projectId, fileContents, fileAnalyses, synthesis),
-    runSubConceptGeneration(projectId, synthesis, fileAnalyses),
+    tracked('concept_mapping', runConceptMapping(projectId)),
+    tracked('embeddings', runEmbedding(projectId, fileContents, fileAnalyses, synthesis)),
+    tracked('sub_concepts', runSubConceptGeneration(projectId, synthesis, fileAnalyses)),
   ]).then(() => {
-    console.log(`[timing] Background enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
+    console.log(`[timing] Eager enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
     return updateProgress(projectId, 7, 'Enrichment complete', 'enriched');
   }).catch((err) => {
-    console.error(`Background enrichment failed for project ${projectId}:`, err);
+    console.error(`Eager enrichment failed for project ${projectId}:`, err);
   });
 }
 

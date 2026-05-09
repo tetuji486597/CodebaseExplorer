@@ -65,7 +65,9 @@ Return JSON with a "concepts" array where each item has: id, beginner_explanatio
     });
 
     // Update concepts with level explanations (batch via Promise.all)
-    const concepts = Array.isArray(result?.concepts) ? result.concepts : [];
+    const validKeys = new Set(synthesis.concepts.map((c) => c.id));
+    const concepts = (Array.isArray(result?.concepts) ? result.concepts : [])
+      .filter((c) => validKeys.has(c.id));
     if (concepts.length > 0) {
       await Promise.all(
         concepts.map((concept) =>
@@ -133,4 +135,75 @@ Return JSON with an "edges" array where each item has: source, target, explanati
   } catch (err) {
     console.error('Relationship explanations failed:', err);
   }
+}
+
+const DEPTH_SYSTEM_PROMPT = `Generate three levels of explanation for an architectural concept, targeting developers joining a new codebase (new hires, open-source contributors, technical reviewers):
+- Beginner (Conceptual): Plain-language overview using real-world analogies. Explains "what this does" and "why it exists" without assuming familiarity with the codebase.
+- Intermediate (Applied): Connects to design patterns and engineering principles (MVC, observer, dependency injection, separation of concerns). Explains how this concept fits into the system architecture, referencing specific functions and data flows.
+- Advanced (Under the Hood): Implementation details — specific libraries, framework internals, performance trade-offs, security considerations, and what an experienced engineer would want to know before modifying this code.
+Each level MUST be meaningfully different from the others — not the same idea reworded. Respond with ONLY valid JSON, no markdown.`;
+
+export async function generateDepthForConcept(
+  projectId: string,
+  conceptKey: string,
+  synthesis: ConceptSynthesisResult,
+  fileAnalyses: FileAnalysis[],
+): Promise<{ beginner: string; intermediate: string; advanced: string } | null> {
+  const concept = synthesis.concepts.find((c) => c.id === conceptKey);
+  if (!concept) return null;
+
+  const { data: existing } = await supabase
+    .from('concepts')
+    .select('beginner_explanation')
+    .eq('project_id', projectId)
+    .eq('concept_key', conceptKey)
+    .single();
+
+  if (existing?.beginner_explanation) return null;
+
+  const conceptDescription = `Concept: ${concept.name} (${concept.id})
+Description: ${concept.explanation}
+Files: ${(Array.isArray(concept.file_ids) ? concept.file_ids : []).join(', ')}
+Metaphor: ${concept.metaphor}`;
+
+  const result = await callClaudeStructured<{
+    concepts: Array<{
+      id: string;
+      beginner_explanation: string;
+      intermediate_explanation: string;
+      advanced_explanation: string;
+    }>;
+  }>({
+    system: DEPTH_SYSTEM_PROMPT,
+    prompt: `Generate multi-level explanations for this concept:
+
+${conceptDescription}
+
+Return JSON with a "concepts" array containing one item with: id, beginner_explanation, intermediate_explanation, advanced_explanation.`,
+    schema: depthMappingSchema,
+    schemaName: 'depth_mapping',
+    maxTokens: 2048,
+    model: 'fast',
+    operation: 'depth_mapping_lazy',
+    projectId,
+  });
+
+  const generated = result.concepts?.[0];
+  if (!generated) return null;
+
+  await supabase
+    .from('concepts')
+    .update({
+      beginner_explanation: generated.beginner_explanation,
+      intermediate_explanation: generated.intermediate_explanation,
+      advanced_explanation: generated.advanced_explanation,
+    })
+    .eq('project_id', projectId)
+    .eq('concept_key', conceptKey);
+
+  return {
+    beginner: generated.beginner_explanation,
+    intermediate: generated.intermediate_explanation,
+    advanced: generated.advanced_explanation,
+  };
 }

@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { supabase } from '../db/supabase.js';
-import { downloadFileContent, deleteProjectFiles } from '../db/fileStorage.js';
+import { downloadFileContent, deleteProjectFiles, recoverFileContents } from '../db/fileStorage.js';
 import { runPipeline } from '../pipeline/orchestrator.js';
 import { computeContentHash, findCachedProject } from '../pipeline/contentHash.js';
+import { generateSubConceptsOnDemand } from '../pipeline/subConceptGeneration.js';
+import { loadPipelineContext } from '../pipeline/pipelineContext.js';
+import { generateInsightsIfMissing } from '../pipeline/insightGeneration.js';
 
 const app = new Hono();
 
@@ -160,6 +163,58 @@ app.post('/:id/cancel', async (c) => {
   return c.json({ status: 'cancelled' });
 });
 
+// POST /api/pipeline/:id/rerun - Re-run pipeline on an existing project
+app.post('/:id/rerun', async (c) => {
+  const projectId = c.req.param('id');
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id, pipeline_status, user_id')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const inProgress = ['pending', 'processing', 'stage_1', 'stage_2', 'stage_3'];
+  if (inProgress.includes(project.pipeline_status)) {
+    return c.json({ error: 'Pipeline is already running' }, 409);
+  }
+
+  const fileContents = await recoverFileContents(projectId);
+  if (Object.keys(fileContents).length === 0) {
+    return c.json({ error: 'No file contents found in storage. Please re-upload.' }, 400);
+  }
+
+  // Clear derived data (keep project row and storage files)
+  await Promise.all([
+    supabase.from('quiz_state').delete().eq('project_id', projectId),
+    supabase.from('quiz_questions').delete().eq('project_id', projectId),
+    supabase.from('chat_messages').delete().eq('project_id', projectId),
+    supabase.from('code_chunks').delete().eq('project_id', projectId),
+    supabase.from('concept_universal_map').delete().eq('project_id', projectId),
+    supabase.from('user_concept_progress').delete().eq('project_id', projectId),
+    supabase.from('sub_concepts').delete().eq('project_id', projectId),
+    supabase.from('sub_concept_edges').delete().eq('project_id', projectId),
+  ]);
+  await Promise.all([
+    supabase.from('concept_edges').delete().eq('project_id', projectId),
+    supabase.from('insights').delete().eq('project_id', projectId),
+    supabase.from('user_state').delete().eq('project_id', projectId),
+  ]);
+  await supabase.from('files').delete().eq('project_id', projectId);
+  await supabase.from('concepts').delete().eq('project_id', projectId);
+
+  await supabase
+    .from('projects')
+    .update({ pipeline_status: 'pending', pipeline_progress: null })
+    .eq('id', projectId);
+
+  runPipeline(projectId, { fileTree: null, fileContents, importEdges: [] }).catch((err) => {
+    console.error('Rerun pipeline failed:', err);
+  });
+
+  return c.json({ success: true, projectId });
+});
+
 // GET /api/pipeline/:id/stream - SSE stream of pipeline progress
 app.get('/:id/stream', async (c) => {
   const projectId = c.req.param('id');
@@ -232,10 +287,13 @@ app.get('/:id/status', async (c) => {
   const projectId = c.req.param('id');
   const { data } = await supabase
     .from('projects')
-    .select('pipeline_status')
+    .select('pipeline_status, pipeline_progress')
     .eq('id', projectId)
     .single();
-  return c.json({ status: data?.pipeline_status || 'unknown' });
+  return c.json({
+    status: data?.pipeline_status || 'unknown',
+    enrichment: (data?.pipeline_progress as any)?.enrichment_stages || null,
+  });
 });
 
 // GET /api/pipeline/:id/data - Get all project data (concepts, edges, files, insights)
@@ -293,12 +351,33 @@ app.get('/:id/data', async (c) => {
     userState = data;
   }
 
+  // Lazy insight generation: if no insights exist yet, generate on first data load
+  let insights = insightsRes.data || [];
+  if (insights.length === 0 && projectRes.data?.pipeline_status !== 'processing') {
+    try {
+      const context = await loadPipelineContext(projectId);
+      if (context) {
+        const generated = await generateInsightsIfMissing(projectId, context.synthesis, context.fileAnalyses);
+        if (generated) {
+          const { data: freshInsights } = await supabase
+            .from('insights')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('priority', { ascending: false });
+          insights = freshInsights || [];
+        }
+      }
+    } catch (err) {
+      console.error('[pipeline/data] Lazy insight generation failed:', err);
+    }
+  }
+
   return c.json({
     project: projectRes.data,
-    concepts: conceptsRes.data || [],
+    concepts: (conceptsRes.data || []).map((c: any) => ({ ...c, id: c.concept_key })),
     edges: edgesRes.data || [],
     files: filesRes.data || [],
-    insights: insightsRes.data || [],
+    insights,
     userState,
     quizState: quizStateRes.data || [],
     chatMessages: chatRes.data || [],
@@ -325,20 +404,47 @@ app.get('/:id/sub-concepts/:conceptKey', async (c) => {
       .eq('parent_concept_key', conceptKey),
   ]);
 
-  const subConcepts = (subConceptsRes.data || []).map(sc => ({
+  let subConcepts = (subConceptsRes.data || []).map(sc => ({
     id: sc.sub_concept_key,
     name: sc.name,
     one_liner: sc.one_liner,
     color: sc.color,
     importance: sc.importance,
     file_ids: sc.file_ids || [],
+    has_further_depth: sc.has_further_depth !== false,
+    display_order: sc.display_order ?? 0,
   }));
 
-  const subEdges = (subEdgesRes.data || []).map(se => ({
+  let subEdges = (subEdgesRes.data || []).map(se => ({
     source: se.source_sub_key,
     target: se.target_sub_key,
     label: se.label,
   }));
+
+  if (subConcepts.length === 0) {
+    try {
+      const generated = await generateSubConceptsOnDemand(projectId, conceptKey);
+      if (generated) {
+        subConcepts = generated.sub_concepts.map((sc, i) => ({
+          id: sc.id,
+          name: sc.name,
+          one_liner: sc.one_liner,
+          color: sc.color,
+          importance: sc.importance,
+          file_ids: sc.file_ids || [],
+          has_further_depth: sc.has_further_depth !== false,
+          display_order: sc.display_order ?? i,
+        }));
+        subEdges = generated.sub_edges.map(se => ({
+          source: se.source,
+          target: se.target,
+          label: se.label,
+        }));
+      }
+    } catch (err) {
+      console.error(`On-demand sub-concept generation failed for ${conceptKey}:`, err);
+    }
+  }
 
   return c.json({
     ready: subConcepts.length > 0,

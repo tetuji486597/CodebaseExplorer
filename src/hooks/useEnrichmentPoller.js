@@ -4,15 +4,14 @@ import { fetchAndLoadProject } from '../lib/loadProject';
 import { API_BASE } from '../lib/api';
 
 /**
- * Polls for background enrichment completion (depth explanations, insights, quiz questions).
- * After the pipeline marks "complete", enrichment runs in the background.
- * This hook detects when it finishes ("enriched" status) and silently refetches project data,
- * then re-initializes quiz state so quizzes appear even if the user navigated past the
- * originally scheduled positions while enrichment was running.
+ * Polls for background enrichment completion (embeddings, concept mapping, sub-concepts).
+ * Depth mapping, insights, and quizzes are now lazy (generated on first visit),
+ * so this poller only waits for the eager stages to complete.
  */
 export default function useEnrichmentPoller() {
   const projectId = useStore((s) => s.projectId);
   const enrichedRef = useRef(false);
+  const lastStagesRef = useRef(null);
 
   useEffect(() => {
     if (!projectId || enrichedRef.current) return;
@@ -21,16 +20,22 @@ export default function useEnrichmentPoller() {
       try {
         const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/status`);
         if (!res.ok) return;
-        const { status } = await res.json();
+        const { status, enrichment } = await res.json();
+
+        if (enrichment && JSON.stringify(enrichment) !== JSON.stringify(lastStagesRef.current)) {
+          lastStagesRef.current = enrichment;
+
+          const subConceptsDone = enrichment.sub_concepts === 'done';
+          if (subConceptsDone) {
+            await fetchAndLoadProject(projectId);
+          }
+        }
 
         if (status === 'enriched') {
           enrichedRef.current = true;
           clearInterval(interval);
-          // Silently refetch all project data to hydrate depth explanations, insights, etc.
           await fetchAndLoadProject(projectId);
 
-          // Re-init quiz state with the user's current position so that any
-          // concepts whose scheduled review was already passed get rescheduled.
           const store = useStore.getState();
           const { explorationPath, guidedPosition } = store;
           if (explorationPath?.length) {

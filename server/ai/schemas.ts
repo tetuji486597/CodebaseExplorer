@@ -139,21 +139,6 @@ export const relationshipDepthSchema = {
   required: ['edges'],
 };
 
-export const proactiveActionSchema = {
-  type: 'object',
-  properties: {
-    action: {
-      type: 'string',
-      enum: ['highlight_concept', 'show_insight', 'suggest_connection', 'suggest_file', 'show_summary', 'deepen_current', 'nothing'],
-    },
-    target_id: { type: 'string' },
-    reason: { type: 'string' },
-    message: { type: 'string' },
-    priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-  },
-  required: ['action', 'reason', 'priority'],
-};
-
 export const quizGenerationSchema = {
   type: 'object',
   properties: {
@@ -252,8 +237,10 @@ export const subConceptGenerationSchema = {
           color: { type: 'string', enum: ['teal', 'purple', 'coral', 'blue', 'amber', 'pink', 'green', 'gray'] },
           importance: { type: 'string', enum: ['critical', 'important', 'supporting'] },
           file_ids: { type: 'array', items: { type: 'string' } },
+          has_further_depth: { type: 'boolean' },
+          display_order: { type: 'number' },
         },
-        required: ['id', 'name', 'one_liner', 'color', 'importance'],
+        required: ['id', 'name', 'one_liner', 'color', 'importance', 'has_further_depth', 'display_order'],
       },
     },
     sub_edges: {

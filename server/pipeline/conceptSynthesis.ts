@@ -176,6 +176,24 @@ Return a single unified concept_synthesis result with deduplicated concepts (3-1
     codebase_summary: raw.codebase_summary || raw.codebaseSummary || raw.summary || '',
   };
 
+  // Semantic validation: drop invalid edges, validate file references
+  const validConceptIds = new Set(result.concepts.map((c) => c.id));
+  const allFilePaths = new Set(fileAnalyses.map((f) => f.path));
+
+  result.edges = result.edges.filter((e) => {
+    const valid = validConceptIds.has(e.source) && validConceptIds.has(e.target) && e.source !== e.target;
+    if (!valid) console.warn(`[validation] Dropping invalid edge: ${e.source} → ${e.target}`);
+    return valid;
+  });
+
+  if (!validConceptIds.has(result.suggested_starting_concept)) {
+    result.suggested_starting_concept = result.concepts[0]?.id || '';
+  }
+
+  result.concepts.forEach((c) => {
+    c.file_ids = c.file_ids.filter((f) => allFilePaths.has(f));
+  });
+
   // Store concepts (batch insert)
   console.log(`Storing ${result.concepts.length} concepts for project ${projectId}`);
   const conceptRows = result.concepts.map((concept) => ({
@@ -228,6 +246,34 @@ Return a single unified concept_synthesis result with deduplicated concepts (3-1
     .from('projects')
     .update({ summary: result.codebase_summary })
     .eq('id', projectId);
+
+  // Create the universal root concept that contains all other concepts
+  const { error: universeError } = await supabase.from('concepts').insert({
+    project_id: projectId,
+    concept_key: '__universe__',
+    name: fileTree?.name || 'Codebase',
+    color: 'blue',
+    metaphor: 'The entire codebase as a single unit',
+    one_liner: result.codebase_summary?.split('.')[0] || 'Project overview',
+    explanation: result.codebase_summary || '',
+    deep_explanation: result.codebase_summary || '',
+    importance: 'critical',
+  });
+  if (universeError) {
+    console.error('Failed to insert __universe__ concept:', universeError);
+  }
+
+  // Create containment edges from __universe__ to each root concept
+  const universeEdges = result.concepts.map((concept) => ({
+    project_id: projectId,
+    source_concept_key: '__universe__',
+    target_concept_key: concept.id,
+    relationship: 'contains',
+    strength: 'strong',
+  }));
+  if (universeEdges.length > 0) {
+    await supabase.from('concept_edges').insert(universeEdges);
+  }
 
   return result;
 }

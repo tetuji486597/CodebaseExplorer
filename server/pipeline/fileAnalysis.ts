@@ -3,6 +3,7 @@ import { supabase } from '../db/supabase.js';
 import { callClaudeStructured } from '../ai/claude.js';
 import { fileAnalysisSchema } from '../ai/schemas.js';
 import { updateProgress } from './progress.js';
+import { smartTruncate } from './truncation.js';
 
 export interface FileAnalysis {
   path: string;
@@ -39,7 +40,7 @@ export async function runFileAnalysis(
   async function processBatch(batch: [string, string][], batchIndex: number): Promise<FileAnalysis[]> {
     const fileDescriptions = batch
       .map(([path, content]) => {
-        const truncated = content.substring(0, 1500);
+        const truncated = smartTruncate(content, 3500);
         return `<file path="${path}">\n${truncated}\n</file>`;
       })
       .join('\n\n');
