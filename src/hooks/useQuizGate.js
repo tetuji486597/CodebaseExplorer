@@ -37,7 +37,8 @@ export default function useQuizGate() {
   const submitAnswer = useCallback(async (questionId, conceptKey, answer) => {
     if (!projectId) return { correct: false, explanation: '' };
 
-    const position = useStore.getState().guidedPosition;
+    const store = useStore.getState();
+    const position = store.tourPath?.stops?.length ? store.tourPosition : store.guidedPosition;
     try {
       const res = await fetch(`${API_BASE}/api/quiz/${projectId}/answer`, {
         method: 'POST',
@@ -46,8 +47,6 @@ export default function useQuizGate() {
       });
       const result = await res.json();
 
-      // Update local quiz stats
-      const store = useStore.getState();
       const stats = { ...store.quizStats };
       stats[conceptKey] = {
         streak: result.newStreak,
@@ -69,7 +68,7 @@ export default function useQuizGate() {
 
     const store = useStore.getState();
     const conceptKeys = store.quizGateQuestions.map(q => q.concept_key);
-    const position = store.guidedPosition;
+    const position = store.tourPath?.stops?.length ? store.tourPosition : store.guidedPosition;
 
     try {
       await fetch(`${API_BASE}/api/quiz/${projectId}/skip`, {

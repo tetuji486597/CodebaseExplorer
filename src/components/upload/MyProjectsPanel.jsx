@@ -25,11 +25,16 @@ function getLangColor(lang) {
   return LANG_COLORS[lang] || 'var(--color-accent)';
 }
 
+const CACHE_TTL = 60_000;
+
 export default function MyProjectsPanel() {
   const navigate = useNavigate();
   const user = useStore(s => s.user);
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProjects = useStore(s => s.cachedProjects);
+  const cachedProjectsAt = useStore(s => s.cachedProjectsAt);
+  const setCachedProjects = useStore(s => s.setCachedProjects);
+  const [projects, setProjects] = useState(cachedProjects || []);
+  const [loading, setLoading] = useState(!cachedProjects);
   const [loadingId, setLoadingId] = useState(null);
   const [error, setError] = useState(null);
 
@@ -38,6 +43,9 @@ export default function MyProjectsPanel() {
       setLoading(false);
       return;
     }
+    const isFresh = cachedProjects && (Date.now() - cachedProjectsAt < CACHE_TTL);
+    if (isFresh) return;
+
     fetch(`${API_BASE}/api/pipeline/projects?userId=${user.id}`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch');
@@ -45,10 +53,11 @@ export default function MyProjectsPanel() {
       })
       .then(data => {
         setProjects(data);
+        setCachedProjects(data);
         setLoading(false);
       })
       .catch(() => {
-        setError('Could not load your projects.');
+        if (!cachedProjects) setError('Could not load your projects.');
         setLoading(false);
       });
   }, [user?.id]);

@@ -223,6 +223,22 @@ When adding a new user-facing feature (keyboard shortcut, graph interaction, cha
 
 ---
 
+## Web App ↔ CLI Sync
+
+The web app (`src/`, `server/`) and CLI tool (`cx/`) share a backend, database, and data models. When making changes to one, always check whether the other needs a corresponding update. Specifically:
+
+**Shared contracts — change in one means change in both:**
+- **API schemas & endpoints** (`server/routes/cx.ts`, `server/routes/pipeline.ts`, `server/ai/schemas.ts`): If you add/modify an endpoint or response shape that the CLI calls, update the CLI's corresponding code in `cx/lib/`.
+- **Concept/edge data model** (`server/ai/schemas.ts`): Both the web graph (`src/components/GraphCanvas.jsx`) and CLI display (`cx/lib/renderer.ts`, `cx/lib/display.ts`) render concepts and edges. Schema changes must propagate to both.
+- **Chat message format** (`server/routes/cx.ts`, `server/routes/chat.ts`): Both `cx/lib/chat.ts` and the web chat panel read/write the same `chat_messages` table. Field additions or renames must be reflected in both.
+- **Pipeline stages & progress events**: Both frontends render pipeline progress (web: `ProcessingScreen.jsx`, CLI: `cx/lib/analyzer.ts`). Adding or renaming a stage requires updating both.
+- **Project metadata fields**: Both frontends display project info (web: `MyProjects`/`ExplorerView`, CLI: `cx/lib/projects.ts`). New fields should surface in both where relevant.
+- **Authentication flow** (`cx/lib/auth.ts`, web auth): Token format or auth endpoint changes affect both clients.
+
+**How to apply:** After completing any change to `src/`, `server/`, or `cx/`, scan the counterpart directories for code that touches the same data model, endpoint, or schema. If a matching file exists, update it. If unsure, grep for the field/endpoint name across both `src/` and `cx/`.
+
+---
+
 ## Deploy Command
 
 When the user says "deploy", perform these steps in order:

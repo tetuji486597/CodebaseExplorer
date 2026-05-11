@@ -9,7 +9,6 @@ import UploadScreen from './UploadScreen';
 import ProcessingScreen from './ProcessingScreen';
 import BigPictureScreen from './BigPictureScreen';
 import ExplorerView from './ExplorerView';
-import ComprehensionProfile from './ComprehensionProfile';
 import SettingsScreen from './SettingsScreen';
 import MyProjects from './MyProjects';
 import SharedViewer from './shared-viewer/SharedViewer';
@@ -86,7 +85,7 @@ export default function AppRoutes() {
 
   // Scrollable pages vs fixed-viewport
   useEffect(() => {
-    const scrollableRoutes = ['/', '/upload', '/profile', '/overview', '/projects', '/settings', '/admin', '/docs'];
+    const scrollableRoutes = ['/', '/upload', '/overview', '/projects', '/settings', '/admin', '/docs'];
     const isScrollable = scrollableRoutes.includes(location.pathname) && !location.pathname.startsWith('/explore/');
     if (isScrollable) {
       document.body.classList.remove('no-scroll');
@@ -105,7 +104,6 @@ export default function AppRoutes() {
         <Route path="/overview" element={<BigPictureScreen />} />
         <Route path="/explorer" element={<ExplorerRedirect />} />
         <Route path="/explore/:id" element={<ExplorerView />} />
-        <Route path="/profile" element={<ComprehensionProfile />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/projects" element={<MyProjects />} />
         <Route path="/s/:id" element={<SharedViewer />} />

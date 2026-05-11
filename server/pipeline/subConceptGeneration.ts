@@ -13,6 +13,8 @@ Rules:
 - Assign file_ids only from the parent's file list
 - Sub-edges describe how sub-concepts interact within the parent
 - Colors should be from: teal, purple, coral, blue, amber, pink, green, gray
+- For each sub-concept, set has_further_depth to true if it could meaningfully be decomposed further (has multiple distinct responsibilities or mechanisms), or false if it is atomic/leaf-level
+- Set display_order (0-indexed) to define the learning sequence: start with the most foundational sub-concept (the one needed to understand the others), then build up in complexity. Think about what a student needs to learn first to understand the rest.
 - Return ONLY valid JSON, no markdown`;
 
 interface SubConceptResult {
@@ -23,6 +25,8 @@ interface SubConceptResult {
     color: string;
     importance: string;
     file_ids?: string[];
+    has_further_depth?: boolean;
+    display_order?: number;
   }>;
   sub_edges: Array<{
     source: string;
@@ -77,6 +81,90 @@ Assign each file to the most relevant sub-concept.`,
   }
 }
 
+const MAX_DEPTH = 7;
+
+function getDepth(conceptKey: string): number {
+  const matches = conceptKey.match(/exp_/g);
+  return matches ? matches.length : 0;
+}
+
+export async function generateSubConceptsOnDemand(
+  projectId: string,
+  conceptKey: string,
+): Promise<SubConceptResult | null> {
+  if (getDepth(conceptKey) >= MAX_DEPTH) return null;
+
+  const { data: scRow } = await supabase
+    .from('sub_concepts')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('sub_concept_key', conceptKey)
+    .single();
+
+  if (!scRow || !scRow.file_ids?.length || scRow.file_ids.length < 2) return null;
+  if (scRow.has_further_depth === false) return null;
+
+  const { data: fileRows } = await supabase
+    .from('files')
+    .select('path, analysis')
+    .eq('project_id', projectId)
+    .in('path', scRow.file_ids);
+
+  const fileAnalyses: FileAnalysis[] = (fileRows || [])
+    .filter((f: any) => f.analysis)
+    .map((f: any) => ({ path: f.path, ...f.analysis }));
+
+  if (fileAnalyses.length === 0) return null;
+
+  const concept = {
+    id: conceptKey,
+    name: scRow.name,
+    explanation: scRow.one_liner || '',
+    metaphor: '',
+    importance: scRow.importance || 'supporting',
+    file_ids: scRow.file_ids,
+  };
+
+  const result = await generateForConcept(concept, fileAnalyses, projectId);
+  if (!result || !result.sub_concepts.length) return null;
+
+  const subConceptRows: any[] = [];
+  const subEdgeRows: any[] = [];
+
+  for (const [i, sc] of result.sub_concepts.entries()) {
+    subConceptRows.push({
+      project_id: projectId,
+      parent_concept_key: conceptKey,
+      sub_concept_key: sc.id,
+      name: sc.name,
+      one_liner: sc.one_liner,
+      color: sc.color,
+      importance: sc.importance || 'supporting',
+      file_ids: sc.file_ids || [],
+      has_further_depth: sc.has_further_depth !== false,
+      display_order: sc.display_order ?? i,
+    });
+  }
+  for (const se of result.sub_edges) {
+    subEdgeRows.push({
+      project_id: projectId,
+      parent_concept_key: conceptKey,
+      source_sub_key: se.source,
+      target_sub_key: se.target,
+      label: se.label,
+    });
+  }
+
+  if (subConceptRows.length > 0) {
+    await supabase.from('sub_concepts').insert(subConceptRows);
+  }
+  if (subEdgeRows.length > 0) {
+    await supabase.from('sub_concept_edges').insert(subEdgeRows);
+  }
+
+  return result;
+}
+
 export async function runSubConceptGeneration(
   projectId: string,
   synthesis: ConceptSynthesisResult,
@@ -107,7 +195,7 @@ export async function runSubConceptGeneration(
   const subEdgeRows: any[] = [];
 
   for (const { conceptKey, result } of results) {
-    for (const sc of result.sub_concepts) {
+    for (const [i, sc] of result.sub_concepts.entries()) {
       subConceptRows.push({
         project_id: projectId,
         parent_concept_key: conceptKey,
@@ -117,6 +205,8 @@ export async function runSubConceptGeneration(
         color: sc.color,
         importance: sc.importance || 'supporting',
         file_ids: sc.file_ids || [],
+        has_further_depth: sc.has_further_depth !== false,
+        display_order: sc.display_order ?? i,
       });
     }
     for (const se of result.sub_edges) {

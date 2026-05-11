@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cx — how does file reading work?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-base: #0a0a14;
+  --bg-surface: #12131f;
+  --bg-elevated: #1a1b2e;
+  --bg-accent: #232442;
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-visible: rgba(255,255,255,0.12);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --shadow-soft: 0 4px 24px rgba(0,0,0,0.25);
+}
+
+body {
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 18px;
+  color: #6366f1;
+  background: rgba(99,102,241,0.12);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.repo-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.query-display {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.file-count {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+#graph-container {
+  flex: 1;
+  position: relative;
+}
+
+#graph {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#sidebar {
+  width: 400px;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: -4px 0 24px rgba(0,0,0,0.25);
+  overflow-y: auto;
+  transition: transform 300ms ease-out;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sidebar-hidden {
+  transform: translateX(100%);
+  position: absolute !important;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+#sidebar-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 24px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  z-index: 1;
+}
+
+#sidebar-close:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+#sidebar-content {
+  padding: 20px;
+}
+
+.concept-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.concept-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.concept-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.concept-importance {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+.concept-metaphor {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 16px;
+  line-height: 1.6;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  border-left: 3px solid;
+}
+
+.concept-explanation {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.7;
+  margin-bottom: 20px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+
+.file-item {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  cursor: default;
+  transition: background 150ms;
+}
+
+.file-item:hover {
+  background: var(--bg-accent);
+  color: var(--text-primary);
+}
+
+.file-role {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-left: 8px;
+}
+
+.edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edge-item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+.edge-target {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#summary-bar {
+  padding: 10px 24px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+#summary-bar p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-height: 40px;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  #header {
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .query-display { order: 3; flex-basis: 100%; text-align: left; font-size: 14px; }
+  .file-count { font-size: 12px; }
+  #sidebar {
+    width: 100%;
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+  }
+  .sidebar-hidden { transform: translateX(100%); }
+  #summary-bar p { font-size: 12px; }
+}
+
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="header">
+    <div class="header-left">
+      <span class="logo">cx</span>
+      <span class="repo-name">cx</span>
+    </div>
+    <div class="query-display">"how does file reading work?"</div>
+    <div class="file-count">7 files &middot; 7 concepts</div>
+  </header>
+  <div id="main">
+    <div id="graph-container">
+      <canvas id="graph"></canvas>
+    </div>
+    <aside id="sidebar" class="sidebar-hidden">
+      <button id="sidebar-close" aria-label="Close">&times;</button>
+      <div id="sidebar-content"></div>
+    </aside>
+  </div>
+  <div id="summary-bar">
+    <p>The codebase is a CLI tool that analyzes code files by reading them, intelligently scoping relevant files based on user queries, analyzing them with AI, and rendering interactive visualizations. File reading is the foundational operation that feeds all downstream processing.</p>
+  </div>
+</div>
+<script>
+
+(function() {
+  const DATA = {"query":"how does file reading work?","repoName":"cx","concepts":[{"id":"file_io_foundation","name":"File I/O & Directory Traversal","color":"teal","metaphor":"Like a library catalog system that walks through shelves, reading labels and skipping closed sections to find relevant books","one_liner":"Core module that reads files from disk while intelligently filtering out non-code artifacts and unnecessary directories","explanation":"lib/fileReader.ts implements the low-level file reading operations using Node.js fs module primitives (readFileSync, readdirSync, statSync). It maintains configuration constants (SKIP_DIRS, SKIP_FILENAMES, SKIP_EXTENSIONS, CODE_EXTENSIONS) that define which files and directories to traverse and which to skip based on type and naming patterns. This is the entry point for all file content access in the system.","file_ids":["lib/fileReader.ts"],"importance":"critical"},{"id":"query_scoping","name":"Query-Driven File Scoping","color":"blue","metaphor":"Like a librarian who uses your research topic to intelligently narrow down which shelves to examine in detail","one_liner":"Uses AI to parse user queries and intelligently filter the file set to only analyze relevant files","explanation":"lib/queryScoper.ts leverages the AI module to extract keywords and patterns from the user's query, then applies semantic filtering to select only the most relevant files for analysis. This prevents unnecessary analysis of irrelevant code and improves performance and focus.","file_ids":["lib/queryScoper.ts"],"importance":"important"},{"id":"ai_structured_calls","name":"Structured AI Analysis","color":"purple","metaphor":"Like a form-based interview system that ensures consistent, validated responses from a subject matter expert","one_liner":"Wraps Anthropic API to perform AI analysis with schema validation and structured output","explanation":"lib/ai.ts provides the callClaudeStructured function that interfaces with Anthropic's Claude API, implementing tool use, schema validation, and retry logic. This ensures that AI analysis results conform to expected data structures and can be reliably processed downstream.","file_ids":["lib/ai.ts"],"importance":"important"},{"id":"analysis_schema","name":"Analysis Data Model","color":"amber","metaphor":"Like a standardized form template that defines what information must be collected about each file","one_liner":"Defines TypeScript types and JSON schemas for representing file analysis results","explanation":"lib/analyzer.ts exports FileAnalysis, AnalysisResult, and fileAnalysisSchema which define the structure of analysis output. This schema is used both by the AI module for structured validation and by the renderer to understand what data to display.","file_ids":["lib/analyzer.ts"],"importance":"important"},{"id":"visualization_generation","name":"Interactive Visualization Rendering","color":"coral","metaphor":"Like a cartographer converting raw survey data into a detailed, navigable map with colors and connections","one_liner":"Transforms analysis results into interactive HTML visualization with embedded JSON data and styled components","explanation":"lib/renderer.ts generates the final interactive HTML output by consuming analysis results and query scope data. It embeds analyzed data as JSON, applies color coding via COLOR_MAP, and structures the HTML with styling to create an explorable visualization of the codebase architecture.","file_ids":["lib/renderer.ts"],"importance":"important"},{"id":"ui_template","name":"Visualization Template & Styles","color":"green","metaphor":"Like an empty theater stage with lighting rigs and a presentation framework ready for the director's content","one_liner":"HTML template and CSS framework for the interactive visualization interface","explanation":"cx-output.html provides the static HTML structure and CSS styling that forms the foundation of the interactive visualization. It defines the layout, visual appearance, and DOM structure into which the renderer embeds the analyzed data.","file_ids":["cx-output.html"],"importance":"supporting"},{"id":"cli_orchestration","name":"CLI Orchestration & Workflow","color":"gray","metaphor":"Like a project manager who coordinates different teams to read files, analyze them, scope results, and deliver a final report","one_liner":"Entry point that coordinates file reading, AI analysis, query scoping, and visualization rendering","explanation":"bin/cx.ts is the main CLI script that orchestrates the entire workflow. It imports and chains together the fileReader (to get file contents), queryScoper (to filter files by relevance), analyzer (to run AI analysis), and renderer (to produce final output). It handles CLI argument parsing, environment setup, and output file writing.","file_ids":["bin/cx.ts"],"importance":"critical"}],"edges":[{"source":"cli_orchestration","target":"file_io_foundation","relationship":"initiates","strength":"strong"},{"source":"file_io_foundation","target":"query_scoping","relationship":"provides raw files to","strength":"strong"},{"source":"query_scoping","target":"ai_structured_calls","relationship":"uses for semantic filtering","strength":"strong"},{"source":"file_io_foundation","target":"ai_structured_calls","relationship":"provides file contents for analysis to","strength":"strong"},{"source":"ai_structured_calls","target":"analysis_schema","relationship":"validates output against","strength":"strong"},{"source":"analysis_schema","target":"visualization_generation","relationship":"defines structure for","strength":"strong"},{"source":"query_scoping","target":"visualization_generation","relationship":"provides scope context to","strength":"moderate"},{"source":"visualization_generation","target":"ui_template","relationship":"embeds data into","strength":"strong"},{"source":"cli_orchestration","target":"visualization_generation","relationship":"invokes to render output","strength":"strong"}],"files":[{"path":"lib/fileReader.ts","purpose":"Reads and filters project files while skipping non-code directories, lock files, and binary formats.","concepts":["file I/O","directory traversal","filtering rules"],"key_exports":[{"name":"readFileSync, readdirSync, statSync","what_it_does":"Node fs module imports for synchronous file and directory reading"},{"name":"SKIP_DIRS, SKIP_FILENAMES, SKIP_EXTENSIONS","what_it_does":"Set-based configuration to exclude node_modules, lock files, and binary formats from analysis"},{"name":"CODE_EXTENSIONS","what_it_does":"Set of supported source code file extensions for analysis"}],"depends_on":["fs","path"],"complexity":"simple","role":"utility"},{"path":"cx-output.html","purpose":"HTML template and styles for rendering the interactive visualization of file analysis results.","concepts":["UI rendering","CSS styling","visualization"],"key_exports":[{"name":"DOCTYPE html","what_it_does":"Complete HTML document with embedded CSS for dark-themed code analysis visualization"}],"depends_on":[],"complexity":"simple","role":"ui"},{"path":"lib/ai.ts","purpose":"Wraps Anthropic API client to handle structured AI calls with schema validation and retry logic.","concepts":["API client","tool use","structured output"],"key_exports":[{"name":"callClaudeStructured","what_it_does":"Calls Claude API with tool schema validation and auto-retry on failure"},{"name":"StructuredCallOptions","what_it_does":"Interface for configuring system prompt, schema, model selection, and token limits"}],"depends_on":["@anthropic-ai/sdk"],"complexity":"moderate","role":"utility"},{"path":"lib/analyzer.ts","purpose":"Defines data structures for file analysis output and schema for AI-powered code analysis.","concepts":["data schema","type definitions","analysis structure"],"key_exports":[{"name":"FileAnalysis","what_it_does":"Interface describing path, purpose, concepts, exports, dependencies, complexity, and role for each file"},{"name":"AnalysisResult","what_it_does":"Root output structure containing files, concepts, edges, summary, and suggested entry point"},{"name":"fileAnalysisSchema","what_it_does":"JSON schema for validating structured AI responses"}],"depends_on":["./ai.js"],"complexity":"simple","role":"types"},{"path":"lib/queryScoper.ts","purpose":"Uses AI to extract query keywords and patterns to intelligently select relevant files for analysis.","concepts":["keyword extraction","query parsing","file filtering"],"key_exports":[{"name":"scopeFiles","what_it_does":"Calls Claude to extract search keywords and file patterns from natural language query, returns matching files"},{"name":"ScopeResult","what_it_does":"Interface returning filtered files, extracted keywords, and match reasons"}],"depends_on":["./ai.js"],"complexity":"moderate","role":"core_logic"},{"path":"lib/renderer.ts","purpose":"Generates interactive HTML visualization from analysis results with styling and embedded JSON data.","concepts":["HTML generation","visualization","data embedding"],"key_exports":[{"name":"renderHTML","what_it_does":"Produces complete HTML page with embedded analysis data, color schemes, and interactive UI"},{"name":"COLOR_MAP","what_it_does":"Defines color palettes (bg, text, glow) for different concept types"}],"depends_on":["./analyzer.js","./queryScoper.js","path"],"complexity":"moderate","role":"ui"},{"path":"bin/cx.ts","purpose":"CLI entry point that orchestrates file reading, AI analysis, scoping, and HTML rendering with output options.","concepts":["CLI","orchestration","workflow"],"key_exports":[{"name":"cx CLI script","what_it_does":"Main command-line tool that chains fileReader → scopeFiles → analyze → renderHTML"}],"depends_on":["./lib/fileReader.js","./lib/queryScoper.js","./lib/analyzer.js","./lib/renderer.js","fs","child_process","dotenv"],"complexity":"moderate","role":"entry_point"}],"summary":"The codebase is a CLI tool that analyzes code files by reading them, intelligently scoping relevant files based on user queries, analyzing them with AI, and rendering interactive visualizations. File reading is the foundational operation that feeds all downstream processing.","suggestedStart":"file_io_foundation","keywords":["file reading","file read","read file","filereader","file i/o","stream","buffer","parse","load","open","input","fs"],"matchReasons":{"lib/fileReader.ts":"path matches \"filereader\"; path matches \"reader\"; path matches \"file\"","cx-output.html":"contains \"file reading\" (3x); contains \"filereader\" (7x); contains \"file i/o\" (2x)","lib/ai.ts":"path matches \"lib/\"; contains \"input\" (1x)","lib/analyzer.ts":"path matches \"lib/\"","lib/queryScoper.ts":"path matches \"lib/\"","lib/renderer.ts":"path matches \"lib/\"","bin/cx.ts":"contains \"filereader\" (1x); contains \"load\" (1x); contains \"open\" (6x)"}};
+  const COLORS = {"teal":{"bg":"#0d9488","text":"#ccfbf1","glow":"rgba(13,148,136,0.4)"},"purple":{"bg":"#7c3aed","text":"#ede9fe","glow":"rgba(124,58,237,0.4)"},"coral":{"bg":"#f43f5e","text":"#ffe4e6","glow":"rgba(244,63,94,0.4)"},"blue":{"bg":"#3b82f6","text":"#dbeafe","glow":"rgba(59,130,246,0.4)"},"amber":{"bg":"#f59e0b","text":"#fef3c7","glow":"rgba(245,158,11,0.4)"},"pink":{"bg":"#ec4899","text":"#fce7f3","glow":"rgba(236,72,153,0.4)"},"green":{"bg":"#10b981","text":"#d1fae5","glow":"rgba(16,185,129,0.4)"},"gray":{"bg":"#64748b","text":"#e2e8f0","glow":"rgba(100,116,139,0.4)"}};
+
+  const canvas = document.getElementById('graph');
+  const ctx = canvas.getContext('2d');
+  const container = document.getElementById('graph-container');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarContent = document.getElementById('sidebar-content');
+  const sidebarClose = document.getElementById('sidebar-close');
+
+  let width, height, dpr;
+  let nodes = [];
+  let edges = [];
+  let selectedNode = null;
+  let hoveredNode = null;
+  let isDragging = false;
+  let dragNode = null;
+  let panX = 0, panY = 0;
+  let zoom = 1;
+  let lastMouse = { x: 0, y: 0 };
+
+  function resize() {
+    const rect = container.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    width = rect.width;
+    height = rect.height;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function init() {
+    resize();
+
+    const conceptMap = {};
+    DATA.concepts.forEach((c, i) => {
+      const angle = (2 * Math.PI * i) / DATA.concepts.length;
+      const radius = Math.min(width, height) * 0.28;
+      const fileCount = c.file_ids ? c.file_ids.length : 0;
+      const sizeScale = { critical: 1.3, important: 1.0, supporting: 0.75 };
+      const baseR = 30 + fileCount * 4;
+      const r = baseR * (sizeScale[c.importance] || 1.0);
+
+      const node = {
+        id: c.id,
+        x: width / 2 + Math.cos(angle) * radius,
+        y: height / 2 + Math.sin(angle) * radius,
+        vx: 0, vy: 0,
+        r: Math.min(56, Math.max(24, r)),
+        concept: c,
+        color: COLORS[c.color] || COLORS.gray,
+      };
+      nodes.push(node);
+      conceptMap[c.id] = node;
+    });
+
+    DATA.edges.forEach(e => {
+      const source = conceptMap[e.source];
+      const target = conceptMap[e.target];
+      if (source && target) {
+        edges.push({ source, target, relationship: e.relationship, strength: e.strength });
+      }
+    });
+
+    // Simple force simulation
+    simulate();
+
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mouseup', onMouseUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('dblclick', onDblClick);
+    sidebarClose.addEventListener('click', closeSidebar);
+    window.addEventListener('resize', () => { resize(); draw(); });
+
+    // Touch support
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd);
+
+    draw();
+  }
+
+  function simulate() {
+    const iterations = 120;
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    for (let iter = 0; iter < iterations; iter++) {
+      const alpha = 1 - iter / iterations;
+
+      // Repulsion between nodes
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const minDist = (a.r + b.r) * 2.5;
+          const force = (alpha * 800) / (dist * dist);
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          a.x -= fx; a.y -= fy;
+          b.x += fx; b.y += fy;
+
+          // Prevent overlap
+          if (dist < minDist) {
+            const overlap = (minDist - dist) / 2;
+            a.x -= (dx / dist) * overlap;
+            a.y -= (dy / dist) * overlap;
+            b.x += (dx / dist) * overlap;
+            b.y += (dy / dist) * overlap;
+          }
+        }
+      }
+
+      // Attraction along edges
+      edges.forEach(e => {
+        const strengthMult = { strong: 0.08, moderate: 0.04, weak: 0.02 };
+        const k = (strengthMult[e.strength] || 0.04) * alpha;
+        let dx = e.target.x - e.source.x;
+        let dy = e.target.y - e.source.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const idealDist = (e.source.r + e.target.r) * 3;
+        const force = (dist - idealDist) * k;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        e.source.x += fx; e.source.y += fy;
+        e.target.x -= fx; e.target.y -= fy;
+      });
+
+      // Center gravity
+      nodes.forEach(n => {
+        n.x += (centerX - n.x) * 0.01 * alpha;
+        n.y += (centerY - n.y) * 0.01 * alpha;
+      });
+    }
+  }
+
+  function draw() {
+    ctx.save();
+    ctx.clearRect(0, 0, width, height);
+
+    // Background
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, width, height);
+
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+    ctx.lineWidth = 1;
+    const gridSize = 40 * zoom;
+    const offsetX = (panX * zoom) % gridSize;
+    const offsetY = (panY * zoom) % gridSize;
+    for (let x = offsetX; x < width; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+    }
+    for (let y = offsetY; y < height; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    }
+
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+
+    // Draw edges
+    edges.forEach(e => {
+      const isConnected = selectedNode && (e.source === selectedNode || e.target === selectedNode);
+      const alpha = selectedNode ? (isConnected ? 0.6 : 0.08) : 0.2;
+      const widthMap = { strong: 2.5, moderate: 1.5, weak: 1 };
+
+      ctx.strokeStyle = 'rgba(148,163,184,' + alpha + ')';
+      ctx.lineWidth = widthMap[e.strength] || 1.5;
+
+      ctx.beginPath();
+      ctx.moveTo(e.source.x, e.source.y);
+      ctx.lineTo(e.target.x, e.target.y);
+      ctx.stroke();
+
+      // Edge label on hover
+      if (isConnected) {
+        const mx = (e.source.x + e.target.x) / 2;
+        const my = (e.source.y + e.target.y) / 2;
+        ctx.font = '11px "DM Sans", sans-serif';
+        ctx.fillStyle = 'rgba(148,163,184,0.7)';
+        ctx.textAlign = 'center';
+        ctx.fillText(e.relationship, mx, my - 6);
+      }
+    });
+
+    // Draw nodes
+    nodes.forEach(n => {
+      const isSelected = n === selectedNode;
+      const isHovered = n === hoveredNode;
+      const isConnected = selectedNode && edges.some(e =>
+        (e.source === selectedNode && e.target === n) ||
+        (e.target === selectedNode && e.source === n)
+      );
+      const dimmed = selectedNode && !isSelected && !isConnected;
+
+      const alpha = dimmed ? 0.15 : 1;
+
+      // Glow
+      if (isSelected || isHovered) {
+        ctx.shadowColor = n.color.glow;
+        ctx.shadowBlur = isSelected ? 30 : 20;
+      }
+
+      // Circle
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, 2 * Math.PI);
+      ctx.fillStyle = n.color.bg;
+      ctx.fill();
+
+      // Border
+      if (isSelected) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      } else if (isHovered) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+
+      // Label
+      ctx.fillStyle = dimmed ? 'rgba(226,232,240,0.2)' : '#e2e8f0';
+      ctx.font = (n.r > 35 ? '600 13px' : '600 11px') + ' "DM Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const name = n.concept.name;
+      if (name.length > 14 && n.r < 40) {
+        const words = name.split(' ');
+        const mid = Math.ceil(words.length / 2);
+        ctx.fillText(words.slice(0, mid).join(' '), n.x, n.y - 7);
+        ctx.fillText(words.slice(mid).join(' '), n.x, n.y + 7);
+      } else {
+        ctx.fillText(name, n.x, n.y);
+      }
+
+      // File count
+      const fileCount = n.concept.file_ids ? n.concept.file_ids.length : 0;
+      if (fileCount > 0 && !dimmed) {
+        ctx.font = '10px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(148,163,184,' + (dimmed ? 0.15 : 0.6) + ')';
+        ctx.fillText(fileCount + ' files', n.x, n.y + n.r + 14);
+      }
+
+      ctx.globalAlpha = 1;
+    });
+
+    ctx.restore();
+  }
+
+  function screenToWorld(sx, sy) {
+    return { x: (sx - panX) / zoom, y: (sy - panY) / zoom };
+  }
+
+  function hitTest(sx, sy) {
+    const { x, y } = screenToWorld(sx, sy);
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      const dx = x - n.x, dy = y - n.y;
+      if (dx * dx + dy * dy <= (n.r + 6) * (n.r + 6)) return n;
+    }
+    return null;
+  }
+
+  function onMouseMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (isDragging && dragNode) {
+      const { x, y } = screenToWorld(mx, my);
+      dragNode.x = x;
+      dragNode.y = y;
+      draw();
+      return;
+    }
+
+    if (isDragging && !dragNode) {
+      panX += e.clientX - lastMouse.x;
+      panY += e.clientY - lastMouse.y;
+      lastMouse = { x: e.clientX, y: e.clientY };
+      draw();
+      return;
+    }
+
+    const hit = hitTest(mx, my);
+    if (hit !== hoveredNode) {
+      hoveredNode = hit;
+      canvas.style.cursor = hit ? 'pointer' : 'grab';
+      draw();
+    }
+  }
+
+  function onMouseDown(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = hitTest(mx, my);
+
+    isDragging = true;
+    lastMouse = { x: e.clientX, y: e.clientY };
+
+    if (hit) {
+      dragNode = hit;
+      canvas.style.cursor = 'grabbing';
+    } else {
+      dragNode = null;
+      canvas.style.cursor = 'grabbing';
+    }
+  }
+
+  function onMouseUp(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (dragNode) {
+      const hit = hitTest(mx, my);
+      if (hit && hit === dragNode) {
+        selectNode(hit);
+      }
+    }
+
+    isDragging = false;
+    dragNode = null;
+    canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+  }
+
+  function onWheel(e) {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const oldZoom = zoom;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    zoom = Math.max(0.2, Math.min(5, zoom * delta));
+
+    panX = mx - (mx - panX) * (zoom / oldZoom);
+    panY = my - (my - panY) * (zoom / oldZoom);
+
+    draw();
+  }
+
+  function onDblClick(e) {
+    // Reset view
+    panX = 0; panY = 0; zoom = 1;
+    draw();
+  }
+
+  // Touch handling
+  let touchStartDist = 0;
+  let touchStartZoom = 1;
+
+  function onTouchStart(e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const mx = t.clientX - rect.left;
+      const my = t.clientY - rect.top;
+      const hit = hitTest(mx, my);
+      if (hit) {
+        selectNode(hit);
+      }
+      isDragging = true;
+      lastMouse = { x: t.clientX, y: t.clientY };
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchStartDist = Math.sqrt(dx * dx + dy * dy);
+      touchStartZoom = zoom;
+    }
+  }
+
+  function onTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDragging) {
+      const t = e.touches[0];
+      panX += t.clientX - lastMouse.x;
+      panY += t.clientY - lastMouse.y;
+      lastMouse = { x: t.clientX, y: t.clientY };
+      draw();
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      zoom = Math.max(0.2, Math.min(5, touchStartZoom * (dist / touchStartDist)));
+      draw();
+    }
+  }
+
+  function onTouchEnd() {
+    isDragging = false;
+  }
+
+  function selectNode(node) {
+    if (selectedNode === node) {
+      selectedNode = null;
+      closeSidebar();
+    } else {
+      selectedNode = node;
+      showSidebar(node);
+    }
+    draw();
+  }
+
+  function showSidebar(node) {
+    const c = node.concept;
+    const color = node.color;
+    const connectedEdges = edges.filter(e => e.source === node || e.target === node);
+    const fileAnalyses = DATA.files.filter(f => c.file_ids && c.file_ids.includes(f.path));
+
+    const importanceColors = { critical: '#f43f5e', important: '#f59e0b', supporting: '#64748b' };
+
+    let html = '';
+    html += '<div class="concept-header">';
+    html += '<div class="concept-dot" style="background:' + color.bg + ';box-shadow:0 0 12px ' + color.glow + '"></div>';
+    html += '<div class="concept-title">' + esc(c.name) + '</div>';
+    html += '</div>';
+
+    html += '<div class="concept-importance" style="background:' + (importanceColors[c.importance] || '#64748b') + '22;color:' + (importanceColors[c.importance] || '#64748b') + '">' + esc(c.importance) + '</div>';
+
+    if (c.metaphor) {
+      html += '<div class="concept-metaphor" style="border-color:' + color.bg + '">' + esc(c.metaphor) + '</div>';
+    }
+
+    html += '<div class="concept-explanation">' + esc(c.explanation) + '</div>';
+
+    // Files
+    if (fileAnalyses.length > 0) {
+      html += '<div class="section-label">Files (' + fileAnalyses.length + ')</div>';
+      html += '<div class="file-list">';
+      fileAnalyses.forEach(f => {
+        html += '<div class="file-item">' + esc(f.path);
+        if (f.role && f.role !== 'source') {
+          html += '<span class="file-role">' + esc(f.role) + '</span>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Connected concepts
+    if (connectedEdges.length > 0) {
+      html += '<div class="section-label">Connections</div>';
+      html += '<div class="edge-list">';
+      connectedEdges.forEach(e => {
+        const other = e.source === node ? e.target : e.source;
+        const direction = e.source === node ? '→' : '←';
+        html += '<div class="edge-item">' + direction + ' <span class="edge-target">' + esc(other.concept.name) + '</span><br>' + esc(e.relationship) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    sidebarContent.innerHTML = html;
+    sidebar.classList.remove('sidebar-hidden');
+  }
+
+  function closeSidebar() {
+    sidebar.classList.add('sidebar-hidden');
+    selectedNode = null;
+    draw();
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  init();
+})();
+
+</script>
+</body>
+</html>

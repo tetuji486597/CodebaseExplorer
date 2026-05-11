@@ -4,7 +4,7 @@ import { CONCEPT_COLORS } from '../data/sampleData';
 import { API_BASE } from '../lib/api';
 import { FileCode2, Copy, Layers, SkipForward } from 'lucide-react';
 import KeywordHighlighter from './KeywordHighlighter';
-import { getTourChapterProgress } from '../lib/tourPath';
+import { getTourChapterProgress, getStopNavigationContext } from '../lib/tourPath';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const LEVEL_LABELS = { beginner: 'Conceptual', intermediate: 'Applied', advanced: 'Under the Hood' };
@@ -26,7 +26,7 @@ export default function InspectorPanel() {
     focusNodeId, childrenRevealed,
   } = useStore();
 
-  const [explanation, setExplanation] = useState(null);
+  const [explanations, setExplanations] = useState({});
   const [streamingExplanation, setStreamingExplanation] = useState('');
   const [loadingExplanation, setLoadingExplanation] = useState(false);
 
@@ -71,8 +71,13 @@ export default function InspectorPanel() {
 
   const relatedEdges = useMemo(() => {
     if (!concept || selectedNode?.type !== 'concept') return [];
-    return conceptEdges.filter(e => e.source === concept.id || e.target === concept.id);
-  }, [concept, selectedNode, conceptEdges]);
+    const conceptIds = new Set(concepts.map(c => c.id));
+    return conceptEdges.filter(e => {
+      if (e._temporary) return false;
+      if (e.source !== concept.id && e.target !== concept.id) return false;
+      return conceptIds.has(e.source) && conceptIds.has(e.target);
+    });
+  }, [concept, selectedNode, conceptEdges, concepts]);
 
   const activeLevel = activeDepthLevel || 'beginner';
 
@@ -102,25 +107,37 @@ export default function InspectorPanel() {
   const tourProgress = useMemo(() =>
     guidedMode && tourPath ? getTourChapterProgress(tourPath, tourPosition) : null,
   [guidedMode, tourPath, tourPosition]);
+  const nextContext = useMemo(() =>
+    guidedMode && tourPath ? getStopNavigationContext(tourPath, tourPosition, 'next') : null,
+  [guidedMode, tourPath, tourPosition]);
+  const prevContext = useMemo(() =>
+    guidedMode && tourPath ? getStopNavigationContext(tourPath, tourPosition, 'prev') : null,
+  [guidedMode, tourPath, tourPosition]);
   const isExpanded = selectedNode?.type === 'concept' && !!expansions[selectedNode.id];
   const hasSubs = selectedNode?.type === 'concept'
     && (subConceptsReadyKeys.has(selectedNode.id) || !!expansions[selectedNode.id]);
 
+  useEffect(() => { setExplanations({}); }, [selectedNode?.id]);
+
   // Fetch explanation
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'concept') {
-      setExplanation(null);
+      setExplanations({});
       return;
     }
     if (node) {
       const levelKey = `${activeLevel}_explanation`;
       if (node[levelKey]) {
-        setExplanation(node[levelKey]);
+        setExplanations(prev => ({ ...prev, [activeLevel]: node[levelKey] }));
         setLoadingExplanation(false);
         return;
       }
     }
-    if (!projectId) { setExplanation(null); return; }
+    if (explanations[activeLevel]) {
+      setLoadingExplanation(false);
+      return;
+    }
+    if (!projectId) { setExplanations({}); return; }
 
     const fetchExpl = async () => {
       setLoadingExplanation(true);
@@ -134,7 +151,7 @@ export default function InspectorPanel() {
         const ct = res.headers.get('content-type');
         if (ct?.includes('application/json')) {
           const data = await res.json();
-          setExplanation(data.explanation);
+          setExplanations(prev => ({ ...prev, [activeLevel]: data.explanation }));
           setLoadingExplanation(false);
         } else {
           const reader = res.body.getReader();
@@ -152,7 +169,7 @@ export default function InspectorPanel() {
                 try {
                   const d = JSON.parse(line.slice(6));
                   if (d.text) { acc += d.text; setStreamingExplanation(acc); }
-                  if (d.done) { setExplanation(acc); setStreamingExplanation(''); }
+                  if (d.done) { setExplanations(prev => ({ ...prev, [activeLevel]: acc })); setStreamingExplanation(''); }
                 } catch {}
               }
             }
@@ -196,7 +213,7 @@ export default function InspectorPanel() {
 
   if (!showInspector || !node || quizGateActive) return null;
 
-  const displayDescription = explanation || streamingExplanation
+  const displayDescription = explanations[activeLevel] || streamingExplanation
     || node.description || node.explanation || node.one_liner || node.summary || '';
 
   const orderNum = readingIndex >= 0 ? readingIndex + 1 : null;
@@ -214,7 +231,7 @@ export default function InspectorPanel() {
               <span className="sl-insp-step">
                 {tourProgress.isChapterIntro
                   ? `Chapter ${tourProgress.chapterIndex + 1} of ${tourProgress.totalChapters}`
-                  : `Section ${tourProgress.sectionIndex + 1} of ${tourProgress.totalSections}`}
+                  : `${tourProgress.chapterName} \u203A ${tourProgress.sectionIndex + 1} of ${tourProgress.totalSections}`}
               </span>
             </>
           ) : orderNum != null ? (
@@ -521,7 +538,7 @@ export default function InspectorPanel() {
           <svg width="12" height="12" viewBox="0 0 12 12">
             <path d="M8 2L3 6l5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
-          Previous
+          {prevContext?.label || 'Previous'}
         </button>
         <button
           className="sl-insp-nav-btn primary"
@@ -531,7 +548,7 @@ export default function InspectorPanel() {
             : readingIndex === totalConcepts - 1}
           style={{ background: colors.accent }}
         >
-          {tourProgress?.isChapterIntro && tourProgress.totalSections > 0 ? 'Explore sections' : 'Next step'}
+          {nextContext?.label || 'Next step'}
           <svg width="12" height="12" viewBox="0 0 12 12">
             <path d="M4 2l5 4-5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>

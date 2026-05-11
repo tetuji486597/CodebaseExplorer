@@ -207,3 +207,53 @@ Return JSON with a "concepts" array containing one item with: id, beginner_expla
     advanced: generated.advanced_explanation,
   };
 }
+
+export async function generateDepthFromConceptRow(
+  projectId: string,
+  concept: { concept_key: string; name: string; explanation?: string; metaphor?: string },
+): Promise<{ beginner: string; intermediate: string; advanced: string } | null> {
+  const conceptDescription = `Concept: ${concept.name} (${concept.concept_key})
+Description: ${concept.explanation || ''}
+Metaphor: ${concept.metaphor || ''}`;
+
+  const result = await callClaudeStructured<{
+    concepts: Array<{
+      id: string;
+      beginner_explanation: string;
+      intermediate_explanation: string;
+      advanced_explanation: string;
+    }>;
+  }>({
+    system: DEPTH_SYSTEM_PROMPT,
+    prompt: `Generate multi-level explanations for this concept:
+
+${conceptDescription}
+
+Return JSON with a "concepts" array containing one item with: id, beginner_explanation, intermediate_explanation, advanced_explanation.`,
+    schema: depthMappingSchema,
+    schemaName: 'depth_mapping',
+    maxTokens: 2048,
+    model: 'fast',
+    operation: 'depth_mapping_lazy',
+    projectId,
+  });
+
+  const generated = result.concepts?.[0];
+  if (!generated) return null;
+
+  await supabase
+    .from('concepts')
+    .update({
+      beginner_explanation: generated.beginner_explanation,
+      intermediate_explanation: generated.intermediate_explanation,
+      advanced_explanation: generated.advanced_explanation,
+    })
+    .eq('project_id', projectId)
+    .eq('concept_key', concept.concept_key);
+
+  return {
+    beginner: generated.beginner_explanation,
+    intermediate: generated.intermediate_explanation,
+    advanced: generated.advanced_explanation,
+  };
+}

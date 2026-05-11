@@ -37,6 +37,9 @@ function getSelectionInfo() {
   const focus = sel.focusNode?.parentElement;
   if (isEditableElement(anchor) || isEditableElement(focus)) return null;
 
+  const anchorEl = sel.anchorNode?.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode;
+  if (!anchorEl?.closest('.sl-inspector')) return null;
+
   const range = sel.getRangeAt(0);
   const rect = range.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;

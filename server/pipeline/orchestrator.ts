@@ -3,10 +3,10 @@ import { uploadFileContentsBatch } from '../db/fileStorage.js';
 import { runFileAnalysis } from './fileAnalysis.js';
 import { runConceptSynthesis } from './conceptSynthesis.js';
 import { runEmbedding } from './embedding.js';
-import { runConceptMapping } from './conceptMapping.js';
 import { callClaudeStructured } from '../ai/claude.js';
 import { proactiveSeedingSchema } from '../ai/schemas.js';
 import { runSubConceptGeneration } from './subConceptGeneration.js';
+import { runDepthMapping } from './depthMapping.js';
 import { updateProgress } from './progress.js';
 import { storePipelineContext } from './pipelineContext.js';
 
@@ -201,8 +201,8 @@ Return JSON with: exploration_path (array of concept ids in order), reasoning (w
 }
 
 /**
- * Background enrichment: eager stages only (embeddings, concept mapping, sub-concepts).
- * Depth mapping, insights, and quizzes are now lazy — generated on first visit.
+ * Background enrichment: embeddings, sub-concepts, and depth mapping run eagerly.
+ * Insights and quizzes are lazy — generated on first visit.
  * Pipeline context is stored so lazy endpoints can generate content without re-running the pipeline.
  */
 export function runEnrichment(
@@ -243,9 +243,9 @@ export function runEnrichment(
   );
 
   Promise.all([
-    tracked('concept_mapping', runConceptMapping(projectId)),
     tracked('embeddings', runEmbedding(projectId, fileContents, fileAnalyses, synthesis)),
     tracked('sub_concepts', runSubConceptGeneration(projectId, synthesis, fileAnalyses)),
+    tracked('depth_mapping', runDepthMapping(projectId, synthesis, fileAnalyses)),
   ]).then(() => {
     console.log(`[timing] Eager enrichment: ${((Date.now() - enrichmentStart) / 1000).toFixed(1)}s`);
     return updateProgress(projectId, 7, 'Enrichment complete', 'enriched');

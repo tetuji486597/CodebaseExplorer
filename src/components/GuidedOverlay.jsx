@@ -1,57 +1,72 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import useStore from '../store/useStore';
 import QuizGate from './QuizGate';
 import useQuizGate from '../hooks/useQuizGate';
 
-/**
- * GuidedOverlay — headless behaviors for guided tour mode.
- *
- * All guided-tour CHROME (progress, concept card, next/back) now lives inside
- * the anchored ConceptPopover (InspectorPanel.jsx). This component only:
- *   1) Handles keyboard navigation (←/→/esc) while in guided mode
- *   2) Auto-opens the inspector on the current concept when entering guided mode
- *   3) Renders the QuizGate overlay when a quiz gate is active
- */
 export default function GuidedOverlay() {
   const guidedMode = useStore(s => s.guidedMode);
-  const guidedPosition = useStore(s => s.guidedPosition);
+  const tourPath = useStore(s => s.tourPath);
+  const tourPosition = useStore(s => s.tourPosition);
   const explorationPath = useStore(s => s.explorationPath);
+  const guidedPosition = useStore(s => s.guidedPosition);
   const advanceGuided = useStore(s => s.advanceGuided);
   const retreatGuided = useStore(s => s.retreatGuided);
   const exitGuidedMode = useStore(s => s.exitGuidedMode);
   const quizGateActive = useStore(s => s.quizGateActive);
   const setSelectedNode = useStore(s => s.setSelectedNode);
   const setShowInspector = useStore(s => s.setShowInspector);
-  const selectedNode = useStore(s => s.selectedNode);
   const { checkForQuizGate } = useQuizGate();
 
-  const currentKey = explorationPath[guidedPosition];
+  const currentStop = tourPath?.stops?.[tourPosition];
+  const totalStops = tourPath?.stops?.length || 0;
+  const currentKey = currentStop?.id || explorationPath?.[guidedPosition];
 
-  // When entering guided mode, ensure the inspector is showing the current concept.
-  // Also re-sync when position changes (next/back).
+  // Only sync selection — drill state is handled by advanceGuided/retreatGuided/enterGuidedMode
+  const prevGuidedRef = useRef(false);
   useEffect(() => {
-    if (!guidedMode || !currentKey) return;
+    if (!guidedMode || !currentKey) {
+      prevGuidedRef.current = guidedMode;
+      return;
+    }
+    // On initial guided mode activation (from loadProject), enterGuidedMode already handled drill state
+    // On subsequent stop changes, advanceGuided/retreatGuided already handled drill state
+    // We only need to ensure selection and inspector are synced
+    if (!prevGuidedRef.current) {
+      prevGuidedRef.current = true;
+    }
     setSelectedNode({ type: 'concept', id: currentKey });
     setShowInspector(true);
   }, [guidedMode, currentKey, setSelectedNode, setShowInspector]);
 
   const handleNext = useCallback(async () => {
-    if (guidedPosition >= explorationPath.length - 1) {
-      exitGuidedMode();
-      return;
+    if (tourPath?.stops?.length) {
+      if (tourPosition >= totalStops - 1) {
+        exitGuidedMode();
+        return;
+      }
+      const nextStop = tourPath.stops[tourPosition + 1];
+      if (nextStop?.type === 'chapter_intro') {
+        const gateShown = await checkForQuizGate(tourPosition + 1);
+        if (gateShown) return;
+      }
+    } else {
+      if (guidedPosition >= explorationPath.length - 1) {
+        exitGuidedMode();
+        return;
+      }
     }
-    const nextPos = guidedPosition + 1;
-    const gateShown = await checkForQuizGate(nextPos);
-    if (gateShown) return;
     advanceGuided();
-  }, [guidedPosition, explorationPath.length, advanceGuided, exitGuidedMode, checkForQuizGate]);
+  }, [tourPosition, totalStops, tourPath, guidedPosition, explorationPath, advanceGuided, exitGuidedMode, checkForQuizGate]);
 
   const handleBack = useCallback(() => {
-    if (guidedPosition <= 0) return;
+    if (tourPath?.stops?.length) {
+      if (tourPosition <= 0) return;
+    } else {
+      if (guidedPosition <= 0) return;
+    }
     retreatGuided();
-  }, [guidedPosition, retreatGuided]);
+  }, [tourPosition, guidedPosition, tourPath, retreatGuided]);
 
-  // Keyboard navigation
   useEffect(() => {
     if (!guidedMode || quizGateActive) return;
     const handler = (e) => {

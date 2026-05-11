@@ -5,13 +5,19 @@
 const CHAR_WIDTH = 7.5; // estimated width per character at 12.5px Inter
 const MIN_NODE_GAP = 40; // minimum px between node edges (not centers)
 
-export function nodeRadius(c) {
+export function nodeRadius(c, expansions) {
   const byImportance = { critical: 50, important: 42, supporting: 34 };
   const base = byImportance[c.importance] || 38;
   const r = base + Math.min(8, (c.fileCount || 0) * 0.6);
   if (c._expanded && c._subConcepts?.length) {
     const subCount = c._subConcepts.length;
-    return r + 20 + subCount * 10;
+    let depthExtra = 0;
+    if (expansions) {
+      for (const sc of c._subConcepts) {
+        if (expansions[sc.id]?.subConcepts?.length) depthExtra += 25;
+      }
+    }
+    return r + 20 + subCount * 10 + depthExtra;
   }
   return r;
 }
@@ -20,12 +26,12 @@ function estimateLabelWidth(name) {
   return (name?.length || 0) * CHAR_WIDTH;
 }
 
-function nodeFootprint(c) {
-  const r = nodeRadius(c);
+function nodeFootprint(c, expansions) {
+  const r = nodeRadius(c, expansions);
   return Math.max(r * 2, estimateLabelWidth(c.name));
 }
 
-export function layoutSwimLanes(concepts, edges, viewW, viewH) {
+export function layoutSwimLanes(concepts, edges, viewW, viewH, expansions) {
   const PAD_TOP = 90;
   const PAD_BOT = 80;
   const PAD_L = 200;
@@ -46,7 +52,7 @@ export function layoutSwimLanes(concepts, edges, viewW, viewH) {
   let maxLaneContentW = 0;
   layerKeys.forEach(k => {
     const band = byLayer[k];
-    const totalFootprint = band.reduce((sum, c) => sum + nodeFootprint(c), 0);
+    const totalFootprint = band.reduce((sum, c) => sum + nodeFootprint(c, expansions), 0);
     const gaps = Math.max(0, band.length - 1) * MIN_NODE_GAP;
     maxLaneContentW = Math.max(maxLaneContentW, totalFootprint + gaps);
   });
@@ -55,7 +61,7 @@ export function layoutSwimLanes(concepts, edges, viewW, viewH) {
   let maxRadiusAcrossLanes = 50;
   layerKeys.forEach(k => {
     byLayer[k].forEach(c => {
-      maxRadiusAcrossLanes = Math.max(maxRadiusAcrossLanes, nodeRadius(c));
+      maxRadiusAcrossLanes = Math.max(maxRadiusAcrossLanes, nodeRadius(c, expansions));
     });
   });
   const minLaneH = maxRadiusAcrossLanes * 2 + 80;
@@ -90,7 +96,7 @@ export function layoutSwimLanes(concepts, edges, viewW, viewH) {
     });
 
     const cols = band.length;
-    const radii = band.map(c => nodeRadius(c));
+    const radii = band.map(c => nodeRadius(c, expansions));
     const maxR = Math.max(...radii);
 
     // Determine if we need Y-stagger to avoid label overlap
@@ -107,7 +113,7 @@ export function layoutSwimLanes(concepts, edges, viewW, viewH) {
         ...c,
         x,
         y: laneCY + yOffset,
-        r: nodeRadius(c),
+        r: nodeRadius(c, expansions),
         _laneIdx: laneIdx,
       });
     });

@@ -4,58 +4,15 @@ import { supabase } from '../db/supabase.js';
 import { streamClaude } from '../ai/claude.js';
 import { retrieveChunks } from '../rag/retriever.js';
 import { embed } from '../rag/embedder.js';
-import { loadPipelineContext } from '../pipeline/pipelineContext.js';
-import { generateDepthForConcept } from '../pipeline/depthMapping.js';
-import { prefetchForConcept } from '../pipeline/prefetch.js';
+import { generateDepthFromConceptRow } from '../pipeline/depthMapping.js';
 
 const app = new Hono();
-
-// Determine register from universal concept confidence
-async function getRegisterFromConfidence(
-  projectId: string,
-  conceptKey: string,
-  userId: string = 'anonymous'
-): Promise<'beginner' | 'intermediate' | 'advanced'> {
-  try {
-    // Find universal concepts mapped to this concept key
-    const { data: mappings } = await supabase
-      .from('concept_universal_map')
-      .select('universal_concept_id')
-      .or(`project_id.eq.${projectId},curated_codebase_id.not.is.null`)
-      .eq('concept_key', conceptKey);
-
-    if (!mappings || mappings.length === 0) return 'beginner';
-
-    const ucIds = mappings.map((m: any) => m.universal_concept_id);
-
-    const { data: progress } = await supabase
-      .from('user_concept_progress')
-      .select('confidence')
-      .eq('user_id', userId)
-      .in('concept_id', ucIds);
-
-    if (!progress || progress.length === 0) return 'beginner';
-
-    // Average confidence across mapped universal concepts
-    const avgConfidence = progress.reduce((sum: number, p: any) => sum + (p.confidence || 0), 0) / progress.length;
-
-    if (avgConfidence < 0.3) return 'beginner';
-    if (avgConfidence < 0.7) return 'intermediate';
-    return 'advanced';
-  } catch {
-    return 'beginner';
-  }
-}
 
 // POST /api/explain - RAG-powered explanations for nodes
 app.post('/', async (c) => {
   const { projectId, conceptKey, filePath, userLevel, userId } = await c.req.json();
 
-  // Determine level: explicit override > confidence-based > fallback
-  let level = userLevel || 'beginner';
-  if (!userLevel && conceptKey) {
-    level = await getRegisterFromConfidence(projectId, conceptKey, userId || 'anonymous');
-  }
+  const level = userLevel || 'beginner';
 
   let question: string;
   let conceptFilter: string | undefined;
@@ -70,36 +27,36 @@ app.post('/', async (c) => {
       .single();
 
     if (concept) {
-      // Return pre-generated explanation based on level
-      const explanationByLevel: Record<string, string> = {
-        beginner: concept.beginner_explanation || concept.explanation,
-        intermediate: concept.intermediate_explanation || concept.explanation,
-        advanced: concept.advanced_explanation || concept.deep_explanation || concept.explanation,
-      };
+      const levelField = level === 'beginner' ? 'beginner_explanation'
+        : level === 'intermediate' ? 'intermediate_explanation'
+        : 'advanced_explanation';
 
-      const preGenerated = explanationByLevel[level];
-      if (preGenerated) {
-        return c.json({ explanation: preGenerated, concept });
+      if (concept[levelField]) {
+        return c.json({ explanation: concept[levelField], concept });
       }
 
-      // Lazy generation: depth not pre-generated, generate on first visit
+      // Lazy generation: level-specific explanation not available
       try {
-        const context = await loadPipelineContext(projectId);
-        if (context) {
-          const depth = await generateDepthForConcept(projectId, conceptKey, context.synthesis, context.fileAnalyses);
-          if (depth) {
-            prefetchForConcept(projectId, conceptKey, context);
-            const lazyExplanation = level === 'advanced' ? depth.advanced
-              : level === 'intermediate' ? depth.intermediate
-              : depth.beginner;
-            return c.json({
-              explanation: lazyExplanation,
-              concept: { ...concept, beginner_explanation: depth.beginner, intermediate_explanation: depth.intermediate, advanced_explanation: depth.advanced },
-            });
-          }
+        const depth = await generateDepthFromConceptRow(projectId, concept);
+        if (depth) {
+          const lazyExplanation = level === 'advanced' ? depth.advanced
+            : level === 'intermediate' ? depth.intermediate
+            : depth.beginner;
+          return c.json({
+            explanation: lazyExplanation,
+            concept: { ...concept, beginner_explanation: depth.beginner, intermediate_explanation: depth.intermediate, advanced_explanation: depth.advanced },
+          });
         }
       } catch (err) {
         console.error(`[explain] Lazy depth generation failed for ${conceptKey}:`, err);
+      }
+
+      // Fallback to generic explanation while level-specific generation is unavailable
+      const fallback = level === 'advanced'
+        ? (concept.deep_explanation || concept.explanation)
+        : concept.explanation;
+      if (fallback) {
+        return c.json({ explanation: fallback, concept });
       }
     }
 

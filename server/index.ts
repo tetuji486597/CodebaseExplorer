@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { compress } from 'hono/compress';
 import { logger } from 'hono/logger';
 import { config } from 'dotenv';
 config({ quiet: true });
@@ -12,7 +13,6 @@ import proactiveRoutes from './routes/proactive.js';
 import userStateRoutes from './routes/user-state.js';
 import githubRoutes from './routes/github.js';
 import curatedRoutes from './routes/curated.js';
-import skillProfileRoutes from './routes/skill-profile.js';
 import quizRoutes from './routes/quiz.js';
 import shareRoutes from './routes/share.js';
 import cxRoutes from './routes/cx.js';
@@ -25,6 +25,7 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use('*', compress());
 app.use('*', logger());
 
 // Health check
@@ -38,7 +39,6 @@ app.route('/api/proactive', proactiveRoutes);
 app.route('/api/user-state', userStateRoutes);
 app.route('/api/github', githubRoutes);
 app.route('/api/curated', curatedRoutes);
-app.route('/api/skill-profile', skillProfileRoutes);
 app.route('/api/quiz', quizRoutes);
 app.route('/api/share', shareRoutes);
 app.route('/api/cx', cxRoutes);

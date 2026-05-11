@@ -74,13 +74,7 @@ app.get('/:id', async (c) => {
 
   if (error || !codebase) return c.json({ error: 'Not found' }, 404);
 
-  // Get universal concept mappings for this codebase
-  const { data: mappings } = await supabase
-    .from('concept_universal_map')
-    .select('concept_key, universal_concept_id, universal_concepts(id, name, category)')
-    .eq('curated_codebase_id', id);
-
-  return c.json({ ...codebase, universal_mappings: mappings || [] });
+  return c.json(codebase);
 });
 
 // POST /api/curated/:id/load - Load a curated codebase into the explorer (creates a project record)

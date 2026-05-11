@@ -17,7 +17,7 @@ app.get('/projects', async (c) => {
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, framework, language, file_count, summary, created_at, pipeline_status')
+    .select('id, name, framework, language, file_count, summary, created_at, pipeline_status, concepts(count)')
     .eq('user_id', userId)
     .in('pipeline_status', ['complete', 'enriched'])
     .order('created_at', { ascending: false })
@@ -25,21 +25,10 @@ app.get('/projects', async (c) => {
 
   if (error) return c.json({ error: error.message }, 500);
 
-  // Attach concept count per project
-  const projectIds = (data || []).map(p => p.id);
-  const { data: counts } = await supabase
-    .from('concepts')
-    .select('project_id')
-    .in('project_id', projectIds);
-
-  const conceptCounts: Record<string, number> = {};
-  (counts || []).forEach(r => {
-    conceptCounts[r.project_id] = (conceptCounts[r.project_id] || 0) + 1;
-  });
-
   const result = (data || []).map(p => ({
     ...p,
-    concept_count: conceptCounts[p.id] || 0,
+    concept_count: (p as any).concepts?.[0]?.count ?? 0,
+    concepts: undefined,
   }));
 
   return c.json(result);
@@ -68,8 +57,6 @@ app.delete('/projects/:id', async (c) => {
     supabase.from('quiz_questions').delete().eq('project_id', projectId),
     supabase.from('chat_messages').delete().eq('project_id', projectId),
     supabase.from('code_chunks').delete().eq('project_id', projectId),
-    supabase.from('concept_universal_map').delete().eq('project_id', projectId),
-    supabase.from('user_concept_progress').delete().eq('project_id', projectId),
     supabase.from('sub_concepts').delete().eq('project_id', projectId),
     supabase.from('sub_concept_edges').delete().eq('project_id', projectId),
   ]);
@@ -190,8 +177,6 @@ app.post('/:id/rerun', async (c) => {
     supabase.from('quiz_questions').delete().eq('project_id', projectId),
     supabase.from('chat_messages').delete().eq('project_id', projectId),
     supabase.from('code_chunks').delete().eq('project_id', projectId),
-    supabase.from('concept_universal_map').delete().eq('project_id', projectId),
-    supabase.from('user_concept_progress').delete().eq('project_id', projectId),
     supabase.from('sub_concepts').delete().eq('project_id', projectId),
     supabase.from('sub_concept_edges').delete().eq('project_id', projectId),
   ]);
@@ -318,8 +303,11 @@ app.get('/:id/data', async (c) => {
       return c.json({ error: 'Authentication required' }, 401);
     }
     try {
-      const { data } = await supabase.auth.getUser(authHeader.slice(7));
-      if (!data?.user || data.user.id !== projectMeta.user_id) {
+      const { data, error } = await supabase.auth.getUser(authHeader.slice(7));
+      if (error || !data?.user) {
+        return c.json({ error: 'Invalid or expired token' }, 401);
+      }
+      if (data.user.id !== projectMeta.user_id) {
         return c.json({ error: 'Access denied' }, 403);
       }
     } catch {

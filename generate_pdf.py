@@ -1,1236 +1,770 @@
-"""
-Generate an aesthetic PDF from AI_ARCHITECTURE.md
-Dark tech aesthetic with proper visuals, diagrams, and syntax highlighting.
-"""
+"""Generate a polished PDF explaining how Codebase Explorer works."""
 
-import os
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch, mm
-from reportlab.lib.colors import HexColor, Color, white, black
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, KeepTogether, Flowable, HRFlowable
-)
+from reportlab.lib.units import inch
+from reportlab.lib.colors import HexColor, white, Color
 from reportlab.pdfgen import canvas
-from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle, Polygon, Group
-from reportlab.graphics import renderPDF
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate, Frame
-from io import BytesIO
-import textwrap
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+import os
 
-# ── Color Palette (Dark Tech) ──────────────────────────────────
-BG_DARK = HexColor("#0D1117")
-BG_CARD = HexColor("#161B22")
-BG_CODE = HexColor("#1C2333")
-BG_ACCENT = HexColor("#21262D")
-BORDER = HexColor("#30363D")
-TEXT_PRIMARY = HexColor("#E6EDF3")
-TEXT_SECONDARY = HexColor("#8B949E")
-TEXT_MUTED = HexColor("#6E7681")
-ACCENT_BLUE = HexColor("#58A6FF")
-ACCENT_PURPLE = HexColor("#BC8CFF")
-ACCENT_GREEN = HexColor("#3FB950")
-ACCENT_ORANGE = HexColor("#D29922")
-ACCENT_RED = HexColor("#F85149")
-ACCENT_TEAL = HexColor("#39D2C0")
-ACCENT_PINK = HexColor("#F778BA")
-ACCENT_CYAN = HexColor("#79C0FF")
+# Colors (from CLAUDE.md dark theme)
+BG_BASE      = HexColor("#0a0a14")
+BG_SURFACE   = HexColor("#12131f")
+BG_ELEVATED  = HexColor("#1a1b2e")
+BG_ACCENT    = HexColor("#232442")
+INDIGO       = HexColor("#6366f1")
+AMBER        = HexColor("#f59e0b")
+EMERALD      = HexColor("#10b981")
+CYAN         = HexColor("#06b6d4")
+ROSE         = HexColor("#f43f5e")
+VIOLET       = HexColor("#8b5cf6")
+ORANGE       = HexColor("#f97316")
+TEXT_PRIMARY  = HexColor("#e2e8f0")
+TEXT_SECONDARY= HexColor("#94a3b8")
+TEXT_TERTIARY = HexColor("#64748b")
+WHITE        = HexColor("#ffffff")
+BORDER       = HexColor("#1e2035")
 
-# Page setup
-PAGE_W, PAGE_H = letter
-MARGIN = 0.75 * inch
+W, H = letter
+
+OUTPUT = os.path.join(os.path.dirname(__file__), "Codebase_Explorer_How_It_Works.pdf")
 
 
-# ── Custom Flowables ───────────────────────────────────────────
-
-class DarkBackground(Flowable):
-    """Fill entire page with dark background."""
-    def __init__(self, width, height, color=BG_DARK):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = height
-        self.color = color
-
-    def draw(self):
-        self.canv.setFillColor(self.color)
-        self.canv.rect(-MARGIN, -self.height - MARGIN, PAGE_W, PAGE_H, fill=1, stroke=0)
+def draw_bg(c, color=BG_BASE):
+    c.setFillColor(color)
+    c.rect(0, 0, W, H, fill=1, stroke=0)
 
 
-class GlowLine(Flowable):
-    """A glowing horizontal line separator."""
-    def __init__(self, width, color=ACCENT_BLUE, thickness=1.5):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = 8
-        self.color = color
-        self.thickness = thickness
-
-    def draw(self):
-        c = self.canv
-        # Glow effect (wider, lighter)
-        glow = Color(self.color.red, self.color.green, self.color.blue, 0.15)
-        c.setStrokeColor(glow)
-        c.setLineWidth(6)
-        c.line(0, 4, self.width, 4)
-        # Main line
-        c.setStrokeColor(self.color)
-        c.setLineWidth(self.thickness)
-        c.line(0, 4, self.width, 4)
+def draw_header_bar(c, y, color=INDIGO, height=4):
+    c.setFillColor(color)
+    c.rect(0, y, W, height, fill=1, stroke=0)
 
 
-class GradientBox(Flowable):
-    """A box with gradient-like effect and content."""
-    def __init__(self, width, height, text, color1, color2, text_style):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = height
-        self.text = text
-        self.color1 = color1
-        self.color2 = color2
-        self.text_style = text_style
-
-    def draw(self):
-        c = self.canv
-        # Background
-        c.setFillColor(self.color1)
-        c.roundRect(0, 0, self.width, self.height, 8, fill=1, stroke=0)
-        # Accent stripe
-        c.setFillColor(self.color2)
-        c.roundRect(0, 0, 4, self.height, 2, fill=1, stroke=0)
-
-
-class CodeBlock(Flowable):
-    """Styled code block with dark background and syntax coloring."""
-    def __init__(self, code, width, language="typescript"):
-        Flowable.__init__(self)
-        self.code = code
-        self.bwidth = width
-        self.language = language
-        self._lines = code.strip().split('\n')
-        self._line_height = 11
-        self._padding = 12
-        self.height = len(self._lines) * self._line_height + self._padding * 2 + 20
-        self.width = width
-
-    def draw(self):
-        c = self.canv
-        # Background
-        c.setFillColor(BG_CODE)
-        c.roundRect(0, 0, self.bwidth, self.height, 6, fill=1, stroke=0)
-
-        # Border
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(0, 0, self.bwidth, self.height, 6, fill=0, stroke=1)
-
-        # Language label
-        c.setFillColor(TEXT_MUTED)
-        c.setFont("Helvetica", 7)
-        c.drawString(self._padding, self.height - 14, self.language)
-
-        # Code lines
-        y = self.height - 28
-        for i, line in enumerate(self._lines):
-            # Line number
-            c.setFillColor(TEXT_MUTED)
-            c.setFont("Courier", 8)
-            c.drawRightString(self._padding + 20, y, str(i + 1))
-
-            # Code text with basic coloring
-            x = self._padding + 28
-            self._draw_colored_line(c, x, y, line)
-            y -= self._line_height
-
-    def _draw_colored_line(self, c, x, y, line):
-        """Basic syntax coloring."""
-        keywords = {'function', 'const', 'let', 'var', 'return', 'if', 'else', 'for', 'while',
-                    'async', 'await', 'import', 'from', 'export', 'interface', 'type', 'enum',
-                    'class', 'new', 'this', 'create', 'select', 'table', 'not', 'null', 'default',
-                    'as', 'where', 'and', 'or', 'order', 'by', 'desc', 'limit', 'in', 'on',
-                    'primary', 'key', 'references', 'cascade', 'index', 'using', 'with', 'schema',
-                    'extension', 'exists', 'text', 'integer', 'float', 'boolean', 'jsonb', 'uuid'}
-        types = {'string', 'number', 'boolean', 'void', 'any', 'Record', 'Array', 'Promise',
-                 'ReadableStream', 'Partial'}
-
-        c.setFont("Courier", 8.5)
-        tokens = line.split(' ')
-        for token in tokens:
-            clean = token.strip('(){}[];:,.')
-            if clean in keywords:
-                c.setFillColor(ACCENT_PURPLE)
-            elif clean in types:
-                c.setFillColor(ACCENT_TEAL)
-            elif token.startswith("'") or token.startswith('"'):
-                c.setFillColor(ACCENT_GREEN)
-            elif token.startswith('//') or token.startswith('#'):
-                c.setFillColor(TEXT_MUTED)
-            elif any(ch.isdigit() for ch in clean) and clean.replace('.', '').replace('-', '').isdigit():
-                c.setFillColor(ACCENT_ORANGE)
+def draw_text(c, text, x, y, font="Helvetica", size=12, color=TEXT_PRIMARY, max_width=None):
+    c.setFont(font, size)
+    c.setFillColor(color)
+    if max_width:
+        lines = []
+        words = text.split()
+        current = ""
+        for w in words:
+            test = current + (" " if current else "") + w
+            if c.stringWidth(test, font, size) > max_width:
+                lines.append(current)
+                current = w
             else:
-                c.setFillColor(TEXT_SECONDARY)
+                current = test
+        if current:
+            lines.append(current)
+        for i, line in enumerate(lines):
+            c.drawString(x, y - i * (size + 4), line)
+        return len(lines) * (size + 4)
+    else:
+        c.drawString(x, y, text)
+        return size + 4
 
-            c.drawString(x, y, token + ' ')
-            x += c.stringWidth(token + ' ', "Courier", 8.5)
+
+def draw_centered(c, text, y, font="Helvetica", size=12, color=TEXT_PRIMARY):
+    c.setFont(font, size)
+    c.setFillColor(color)
+    tw = c.stringWidth(text, font, size)
+    c.drawString((W - tw) / 2, y, text)
 
 
-class ArchitectureDiagram(Flowable):
-    """Visual system architecture diagram."""
-    def __init__(self, width):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = 380
+def draw_card(c, x, y, w, h, fill=BG_SURFACE, border_color=BORDER, radius=8):
+    c.setFillColor(fill)
+    c.setStrokeColor(border_color)
+    c.setLineWidth(0.5)
+    c.roundRect(x, y, w, h, radius, fill=1, stroke=1)
 
-    def draw(self):
-        c = self.canv
 
-        # Background
-        c.setFillColor(BG_CARD)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=1, stroke=0)
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=0, stroke=1)
+def draw_badge(c, text, x, y, color=INDIGO, text_color=WHITE, font_size=8):
+    c.setFont("Helvetica-Bold", font_size)
+    tw = c.stringWidth(text, "Helvetica-Bold", font_size) + 12
+    c.setFillColor(color)
+    c.roundRect(x, y - 4, tw, font_size + 8, 4, fill=1, stroke=0)
+    c.setFillColor(text_color)
+    c.drawString(x + 6, y, text)
+    return tw
 
-        box_w = self.width - 40
-        left = 20
 
-        # ── Client Box ──
-        self._draw_box(c, left, 290, box_w, 75, "CLIENT (React + Vite)", ACCENT_BLUE,
-                       ["Upload \u2192 Processing UI \u2192 Explorer (Graph + Inspector + Chat)",
-                        "Zustand store \u2190 SSE streams from backend"])
+def draw_bullet(c, text, x, y, color=TEXT_PRIMARY, bullet_color=INDIGO, size=10, max_width=420):
+    c.setFillColor(bullet_color)
+    c.circle(x + 3, y + 3, 2.5, fill=1, stroke=0)
+    return draw_text(c, text, x + 14, y, size=size, color=color, max_width=max_width)
 
-        # Arrow down
-        self._draw_arrow(c, self.width / 2, 290, self.width / 2, 260, ACCENT_BLUE)
-        c.setFillColor(TEXT_MUTED)
-        c.setFont("Helvetica", 7)
-        c.drawCentredString(self.width / 2 + 40, 270, "HTTPS / SSE")
 
-        # ── API Server Box ──
-        self._draw_box(c, left, 145, box_w, 110, "API SERVER (Node.js + Hono, port 3007)", ACCENT_PURPLE,
-                       ["POST /api/pipeline/start      \u2192 Kick off ingestion pipeline",
-                        "GET  /api/pipeline/:id/stream  \u2192 SSE pipeline progress",
-                        "POST /api/chat                 \u2192 RAG-powered chat (streaming)",
-                        "POST /api/proactive            \u2192 Get next proactive action",
-                        "POST /api/explain              \u2192 Explain a specific node",
-                        "",
-                        "Anthropic SDK (Sonnet + Haiku)  |  OpenAI Embeddings  |  Supabase"])
+def draw_flow_box(c, text, x, y, w=80, h=28, color=INDIGO, text_color=WHITE):
+    c.setFillColor(color)
+    c.roundRect(x, y, w, h, 6, fill=1, stroke=0)
+    c.setFont("Helvetica-Bold", 7)
+    c.setFillColor(text_color)
+    tw = c.stringWidth(text, "Helvetica-Bold", 7)
+    c.drawString(x + (w - tw) / 2, y + 10, text)
 
-        # Arrow down
-        self._draw_arrow(c, self.width / 2, 145, self.width / 2, 115, ACCENT_PURPLE)
 
-        # ── Supabase Box ──
-        self._draw_box(c, left, 10, box_w, 100, "SUPABASE", ACCENT_GREEN,
-                       ["Tables: projects, files, concepts, concept_edges,",
-                        "        code_chunks, user_state, insights, chat_messages",
-                        "",
-                        "pgvector: HNSW index (cosine)  |  Full-text: GIN index",
-                        "Hybrid search: 70% vector / 30% lexical"])
+# PAGE 1: Title + Overview
+def page_title(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 6, INDIGO, 6)
 
-    def _draw_box(self, c, x, y, w, h, title, color, lines):
-        # Box background
-        c.setFillColor(BG_CODE)
-        c.roundRect(x, y, w, h, 6, fill=1, stroke=0)
-
-        # Colored left border
+    cx_pos, cy = W / 2, H - 160
+    for i, color in enumerate([INDIGO, VIOLET, CYAN]):
         c.setFillColor(color)
-        c.roundRect(x, y, 4, h, 2, fill=1, stroke=0)
+        c.setFillAlpha(0.6 if i > 0 else 1)
+        offset = (i - 1) * 22
+        c.circle(cx_pos + offset, cy, 18, fill=1, stroke=0)
+    c.setFillAlpha(1)
 
-        # Border
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(x, y, w, h, 6, fill=0, stroke=1)
+    c.setFont("Helvetica-Bold", 36)
+    c.setFillColor(WHITE)
+    title = "Codebase Explorer"
+    tw = c.stringWidth(title, "Helvetica-Bold", 36)
+    c.drawString((W - tw) / 2, cy - 60, title)
 
-        # Title
-        c.setFillColor(color)
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(x + 14, y + h - 16, title)
+    c.setFont("Helvetica", 14)
+    c.setFillColor(TEXT_SECONDARY)
+    sub = "AI-Powered Codebase Comprehension for Everyone"
+    tw = c.stringWidth(sub, "Helvetica", 14)
+    c.drawString((W - tw) / 2, cy - 85, sub)
 
-        # Content lines
-        c.setFont("Courier", 7)
-        c.setFillColor(TEXT_SECONDARY)
-        line_y = y + h - 30
-        for line in lines:
-            c.drawString(x + 14, line_y, line)
-            line_y -= 10
+    c.setStrokeColor(INDIGO)
+    c.setLineWidth(1)
+    c.line(W/2 - 40, cy - 110, W/2 + 40, cy - 110)
 
-    def _draw_arrow(self, c, x1, y1, x2, y2, color):
-        c.setStrokeColor(color)
-        c.setLineWidth(1.5)
-        c.line(x1, y1, x2, y2)
-        # Arrowhead
-        c.setFillColor(color)
-        p = c.beginPath()
-        p.moveTo(x2 - 4, y2 + 6)
-        p.lineTo(x2, y2)
-        p.lineTo(x2 + 4, y2 + 6)
-        p.close()
-        c.drawPath(p, fill=1, stroke=0)
+    card_x, card_w = 60, W - 120
+    card_y, card_h = cy - 310, 170
+    draw_card(c, card_x, card_y, card_w, card_h, BG_SURFACE)
 
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(INDIGO)
+    c.drawString(card_x + 20, card_y + card_h - 28, "WHAT IS IT?")
 
-class PipelineDiagram(Flowable):
-    """Visual pipeline flow diagram."""
-    def __init__(self, width):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = 520
-
-    def draw(self):
-        c = self.canv
-
-        # Background
-        c.setFillColor(BG_CARD)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=1, stroke=0)
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=0, stroke=1)
-
-        stages = [
-            ("ZIP Upload", "Client-side", ACCENT_BLUE, "User drops file"),
-            ("Stage 1", "File Extraction", ACCENT_BLUE, "Parse ZIP, detect imports, classify files"),
-            ("Stage 2", "File Analysis", ACCENT_ORANGE, "Batches of 15 \u2192 Claude Haiku (sequential, 60s waits)"),
-            ("Stage 3", "Concept Synthesis", ACCENT_PURPLE, "1 Sonnet call \u2192 concept graph (3-20 nodes)"),
-            ("Stage 4", "Depth Mapping", ACCENT_TEAL, "1 Sonnet call \u2192 beginner/intermediate/advanced explanations"),
-            ("Stage 5", "Insight Generation", ACCENT_PINK, "1 Sonnet call \u2192 10-20 insights (6 categories)"),
-            ("Stage 6", "Embedding & Indexing", ACCENT_GREEN, "~800-token chunks \u2192 OpenAI embeddings \u2192 pgvector"),
-            ("Stage 7", "Proactive Seeding", ACCENT_CYAN, "1 Sonnet call \u2192 exploration path for user"),
-        ]
-
-        box_w = self.width - 60
-        box_h = 44
-        x = 30
-        y_start = self.height - 30
-
-        for i, (label, name, color, desc) in enumerate(stages):
-            y = y_start - i * (box_h + 16)
-
-            # Connecting line
-            if i > 0:
-                c.setStrokeColor(BORDER)
-                c.setLineWidth(1)
-                c.setDash(3, 3)
-                c.line(self.width / 2, y + box_h, self.width / 2, y + box_h + 16)
-                c.setDash()
-
-                # Arrow
-                c.setFillColor(BORDER)
-                p = c.beginPath()
-                p.moveTo(self.width / 2 - 3, y + box_h + 4)
-                p.lineTo(self.width / 2, y + box_h)
-                p.lineTo(self.width / 2 + 3, y + box_h + 4)
-                p.close()
-                c.drawPath(p, fill=1, stroke=0)
-
-            # Stage box
-            c.setFillColor(BG_CODE)
-            c.roundRect(x, y, box_w, box_h, 5, fill=1, stroke=0)
-
-            # Left accent
-            c.setFillColor(color)
-            c.roundRect(x, y, 4, box_h, 2, fill=1, stroke=0)
-
-            # Stage number circle
-            c.setFillColor(color)
-            c.circle(x + 20, y + box_h / 2, 10, fill=1, stroke=0)
-            c.setFillColor(BG_DARK)
-            c.setFont("Helvetica-Bold", 8)
-            if i == 0:
-                c.drawCentredString(x + 20, y + box_h / 2 - 3, "\u25B2")
-            else:
-                c.drawCentredString(x + 20, y + box_h / 2 - 3, str(i))
-
-            # Label
-            c.setFillColor(color)
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(x + 36, y + box_h - 15, f"{label}: {name}")
-
-            # Description
-            c.setFillColor(TEXT_SECONDARY)
-            c.setFont("Helvetica", 7.5)
-            c.drawString(x + 36, y + 8, desc)
-
-            # Milestone marker after Stage 3
-            if i == 3:
-                c.setFillColor(ACCENT_GREEN)
-                c.setFont("Helvetica-BoldOblique", 7)
-                c.drawRightString(x + box_w - 10, y + 8, "\u2605 Graph renders here \u2014 user can start exploring")
-
-
-class DataFlowDiagram(Flowable):
-    """Visual data flow diagram for user interactions."""
-    def __init__(self, width):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = 260
-
-    def draw(self):
-        c = self.canv
-
-        c.setFillColor(BG_CARD)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=1, stroke=0)
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=0, stroke=1)
-
-        # Title
-        c.setFillColor(ACCENT_BLUE)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(20, self.height - 22, "Runtime Data Flow")
-
-        # Three columns
-        col_w = (self.width - 60) / 3
-        cols = [
-            ("Upload Flow", ACCENT_BLUE, [
-                "1. User drops ZIP",
-                "2. Client extracts files",
-                "3. POST /api/pipeline/start",
-                "4. Server creates project",
-                "5. Client subscribes SSE",
-                "6. Stages 2-7 run async",
-                "7. Graph renders after S3",
-            ]),
-            ("Explore Flow", ACCENT_PURPLE, [
-                "1. Click concept node",
-                "2. Update Zustand state",
-                "3. Sync state (5s debounce)",
-                "4. POST /api/explain",
-                "5. RAG retrieval + Claude",
-                "6. Stream to InspectorPanel",
-                "7. Proactive engine fires",
-            ]),
-            ("Chat Flow", ACCENT_GREEN, [
-                "1. User types question",
-                "2. POST /api/chat",
-                "3. Embed question (OpenAI)",
-                "4. Hybrid search (70/30)",
-                "5. Retrieve code chunks",
-                "6. Stream Claude response",
-                "7. Parse [[concept:]] links",
-            ]),
-        ]
-
-        for col_i, (title, color, steps) in enumerate(cols):
-            x = 20 + col_i * (col_w + 10)
-            y_top = self.height - 45
-
-            # Column header
-            c.setFillColor(color)
-            c.roundRect(x, y_top, col_w, 20, 3, fill=1, stroke=0)
-            c.setFillColor(BG_DARK)
-            c.setFont("Helvetica-Bold", 8)
-            c.drawCentredString(x + col_w / 2, y_top + 6, title)
-
-            # Steps
-            for si, step in enumerate(steps):
-                sy = y_top - 24 - si * 22
-                # Step box
-                c.setFillColor(BG_CODE)
-                c.roundRect(x + 2, sy, col_w - 4, 18, 3, fill=1, stroke=0)
-                c.setFillColor(TEXT_SECONDARY)
-                c.setFont("Helvetica", 7)
-                c.drawString(x + 8, sy + 5, step)
-
-                # Arrow between steps
-                if si < len(steps) - 1:
-                    c.setStrokeColor(Color(color.red, color.green, color.blue, 0.3))
-                    c.setLineWidth(0.5)
-                    c.line(x + col_w / 2, sy, x + col_w / 2, sy - 4)
-
-
-class ProactiveEngineDiagram(Flowable):
-    """Visual representation of the proactive engine rules."""
-    def __init__(self, width):
-        Flowable.__init__(self)
-        self.width = width
-        self.height = 200
-
-    def draw(self):
-        c = self.canv
-
-        c.setFillColor(BG_CARD)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=1, stroke=0)
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(0, 0, self.width, self.height, 10, fill=0, stroke=1)
-
-        # Title
-        c.setFillColor(ACCENT_TEAL)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(20, self.height - 22, "Proactive Engine \u2014 Decision Rules (Deterministic, No AI)")
-
-        rules = [
-            ("Rule 1", "New user", "highlight_concept", "Pulse starting concept", ACCENT_BLUE),
-            ("Rule 2", "Path exists", "suggest next", "Guide along exploration path", ACCENT_PURPLE),
-            ("Rule 3", "10-30s on node", "deepen_current", "Offer deeper explanation", ACCENT_TEAL),
-            ("Rule 4", "Has connections", "suggest_connection", "Highlight unseen neighbor", ACCENT_GREEN),
-            ("Rule 5", "Prereqs met", "show_insight", "Display insight card", ACCENT_ORANGE),
-            ("Rule 6", ">70% explored", "show_summary", "Show progress summary", ACCENT_PINK),
-        ]
-
-        y = self.height - 48
-        for label, condition, action, desc, color in rules:
-            # Rule box
-            c.setFillColor(BG_CODE)
-            c.roundRect(20, y, self.width - 40, 22, 3, fill=1, stroke=0)
-
-            # Left accent
-            c.setFillColor(color)
-            c.roundRect(20, y, 3, 22, 1, fill=1, stroke=0)
-
-            # Rule number
-            c.setFillColor(color)
-            c.setFont("Helvetica-Bold", 7.5)
-            c.drawString(30, y + 7, label)
-
-            # Condition
-            c.setFillColor(TEXT_SECONDARY)
-            c.setFont("Helvetica", 7.5)
-            c.drawString(80, y + 7, condition)
-
-            # Arrow
-            c.setFillColor(TEXT_MUTED)
-            c.drawString(165, y + 7, "\u2192")
-
-            # Action
-            c.setFillColor(ACCENT_CYAN)
-            c.setFont("Courier", 7)
-            c.drawString(180, y + 7, action)
-
-            # Description
-            c.setFillColor(TEXT_MUTED)
-            c.setFont("Helvetica", 7)
-            c.drawString(310, y + 7, desc)
-
-            y -= 26
-
-
-# ── Page Background ────────────────────────────────────────────
-
-def draw_page_bg(canvas_obj, doc):
-    """Draw dark background and subtle grid on every page."""
-    canvas_obj.saveState()
-    # Dark background
-    canvas_obj.setFillColor(BG_DARK)
-    canvas_obj.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-
-    # Subtle dot grid
-    canvas_obj.setFillColor(HexColor("#1A1F2B"))
-    for gx in range(0, int(PAGE_W), 20):
-        for gy in range(0, int(PAGE_H), 20):
-            canvas_obj.circle(gx, gy, 0.3, fill=1, stroke=0)
-
-    # Footer
-    canvas_obj.setFillColor(TEXT_MUTED)
-    canvas_obj.setFont("Helvetica", 7)
-    canvas_obj.drawString(MARGIN, 0.5 * inch, "Codebase Explorer \u2014 AI Architecture")
-    canvas_obj.drawRightString(PAGE_W - MARGIN, 0.5 * inch, f"Page {doc.page}")
-
-    canvas_obj.restoreState()
-
-
-# ── Styles ─────────────────────────────────────────────────────
-
-def get_styles():
-    content_width = PAGE_W - 2 * MARGIN
-
-    return {
-        'title': ParagraphStyle(
-            'Title',
-            fontName='Helvetica-Bold',
-            fontSize=28,
-            leading=34,
-            textColor=TEXT_PRIMARY,
-            alignment=TA_LEFT,
-            spaceAfter=4,
-        ),
-        'subtitle': ParagraphStyle(
-            'Subtitle',
-            fontName='Helvetica',
-            fontSize=12,
-            leading=16,
-            textColor=TEXT_SECONDARY,
-            alignment=TA_LEFT,
-            spaceAfter=20,
-        ),
-        'h1': ParagraphStyle(
-            'H1',
-            fontName='Helvetica-Bold',
-            fontSize=20,
-            leading=26,
-            textColor=ACCENT_BLUE,
-            alignment=TA_LEFT,
-            spaceBefore=24,
-            spaceAfter=8,
-        ),
-        'h2': ParagraphStyle(
-            'H2',
-            fontName='Helvetica-Bold',
-            fontSize=15,
-            leading=20,
-            textColor=ACCENT_PURPLE,
-            alignment=TA_LEFT,
-            spaceBefore=18,
-            spaceAfter=6,
-        ),
-        'h3': ParagraphStyle(
-            'H3',
-            fontName='Helvetica-Bold',
-            fontSize=12,
-            leading=16,
-            textColor=ACCENT_TEAL,
-            alignment=TA_LEFT,
-            spaceBefore=12,
-            spaceAfter=4,
-        ),
-        'body': ParagraphStyle(
-            'Body',
-            fontName='Helvetica',
-            fontSize=9,
-            leading=13,
-            textColor=TEXT_SECONDARY,
-            alignment=TA_JUSTIFY,
-            spaceAfter=6,
-        ),
-        'body_bold': ParagraphStyle(
-            'BodyBold',
-            fontName='Helvetica-Bold',
-            fontSize=9,
-            leading=13,
-            textColor=TEXT_PRIMARY,
-            spaceAfter=4,
-        ),
-        'bullet': ParagraphStyle(
-            'Bullet',
-            fontName='Helvetica',
-            fontSize=9,
-            leading=13,
-            textColor=TEXT_SECONDARY,
-            leftIndent=16,
-            bulletIndent=4,
-            spaceAfter=3,
-        ),
-        'caption': ParagraphStyle(
-            'Caption',
-            fontName='Helvetica-Oblique',
-            fontSize=8,
-            leading=11,
-            textColor=TEXT_MUTED,
-            alignment=TA_CENTER,
-            spaceAfter=12,
-        ),
-        'number': ParagraphStyle(
-            'Number',
-            fontName='Helvetica-Bold',
-            fontSize=36,
-            leading=40,
-            textColor=ACCENT_BLUE,
-        ),
-    }
-
-
-def styled_table(data, col_widths, header_color=ACCENT_BLUE):
-    """Create a dark-themed table."""
-    t = Table(data, colWidths=col_widths)
-
-    style_commands = [
-        # Header
-        ('BACKGROUND', (0, 0), (-1, 0), header_color),
-        ('TEXTCOLOR', (0, 0), (-1, 0), BG_DARK),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('TOPPADDING', (0, 0), (-1, 0), 6),
-
-        # Body
-        ('BACKGROUND', (0, 1), (-1, -1), BG_CODE),
-        ('TEXTCOLOR', (0, 1), (-1, -1), TEXT_SECONDARY),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
-        ('TOPPADDING', (0, 1), (-1, -1), 5),
-
-        # Grid
-        ('GRID', (0, 0), (-1, -1), 0.5, BORDER),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [BG_CODE, BG_CARD]),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
-    ]
-
-    t.setStyle(TableStyle(style_commands))
-    return t
-
-
-# ── Build Document ─────────────────────────────────────────────
-
-def build_pdf(output_path):
-    content_width = PAGE_W - 2 * MARGIN
-    s = get_styles()
-
-    doc = SimpleDocTemplate(
-        output_path,
-        pagesize=letter,
-        leftMargin=MARGIN,
-        rightMargin=MARGIN,
-        topMargin=MARGIN,
-        bottomMargin=MARGIN,
+    summary = (
+        "Codebase Explorer is a full-stack web + CLI application that helps anyone "
+        "understand any codebase instantly through AI-powered visual graph exploration. "
+        "Upload a codebase or analyze a local repo via the terminal \u2014 the AI extracts "
+        "architectural concepts and relationships, then renders them as an interactive "
+        "force-directed graph. Users explore through chat, inspect code with syntax "
+        "highlighting, take comprehension quizzes, and follow guided tours through "
+        "the architecture."
     )
+    y_pos = card_y + card_h - 50
+    draw_text(c, summary, card_x + 20, y_pos, size=10, color=TEXT_PRIMARY, max_width=card_w - 40)
 
-    story = []
+    badge_y = card_y - 50
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(60, badge_y + 16, "TECH STACK")
 
-    # ════════════════════════════════════════
-    # COVER PAGE
-    # ════════════════════════════════════════
-    story.append(Spacer(1, 1.5 * inch))
-    story.append(GlowLine(content_width, ACCENT_BLUE, 2))
-    story.append(Spacer(1, 20))
-
-    story.append(Paragraph("AI Architecture", s['title']))
-    story.append(Paragraph(
-        '<font color="#58A6FF">Codebase Explorer</font> \u2014 '
-        'A proactive, adaptive codebase understanding system',
-        s['subtitle']))
-    story.append(Spacer(1, 10))
-    story.append(GlowLine(content_width, ACCENT_PURPLE, 1))
-    story.append(Spacer(1, 30))
-
-    # Key stats
-    stats_data = [
-        ["7-Stage Pipeline", "Hybrid RAG", "Proactive Engine", "Real-time Streaming"],
-        ["Claude Sonnet + Haiku", "pgvector + Full-text", "Deterministic Rules", "SSE via Hono"],
+    techs = [
+        ("React 19", INDIGO), ("Vite", VIOLET), ("D3-force", CYAN),
+        ("Zustand", EMERALD), ("Tailwind", CYAN), ("Hono", ORANGE),
+        ("Supabase", EMERALD), ("Claude API", VIOLET), ("Ink TUI", AMBER),
     ]
-    stats_table = Table(stats_data, colWidths=[content_width / 4] * 4)
-    stats_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), BG_CARD),
-        ('TEXTCOLOR', (0, 0), (-1, 0), ACCENT_BLUE),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('TEXTCOLOR', (0, 1), (-1, 1), TEXT_MUTED),
-        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, 1), 7.5),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('TOPPADDING', (0, 0), (-1, 0), 14),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
-        ('TOPPADDING', (0, 1), (-1, 1), 2),
-        ('BOTTOMPADDING', (0, 1), (-1, 1), 14),
-        ('GRID', (0, 0), (-1, -1), 0.5, BORDER),
-        ('ROUNDEDCORNERS', [6, 6, 6, 6]),
-    ]))
-    story.append(stats_table)
-    story.append(Spacer(1, 30))
+    bx = 60
+    for name, color in techs:
+        tw = draw_badge(c, name, bx, badge_y - 10, color)
+        bx += tw + 6
+        if bx > W - 80:
+            bx = 60
+            badge_y -= 22
 
-    # Tech stack
-    story.append(Paragraph(
-        '<font color="#8B949E">React + Vite + Zustand + Canvas &nbsp;|&nbsp; '
-        'Node.js + Hono &nbsp;|&nbsp; Supabase + pgvector &nbsp;|&nbsp; '
-        'Anthropic SDK + OpenAI Embeddings</font>',
-        ParagraphStyle('TechStack', fontName='Helvetica', fontSize=8, leading=12,
-                        textColor=TEXT_MUTED, alignment=TA_CENTER)))
-
-    story.append(PageBreak())
-
-    # ════════════════════════════════════════
-    # TABLE OF CONTENTS
-    # ════════════════════════════════════════
-    story.append(Paragraph("Contents", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 12))
-
-    toc_items = [
-        ("1", "Design Principles", "Core architectural philosophy"),
-        ("2", "System Architecture", "Three-tier overview with visual diagram"),
-        ("3", "Ingestion Pipeline", "7-stage ZIP-to-knowledge-base transformation"),
-        ("4", "Semantic Memory (RAG)", "Hybrid retrieval with pgvector + full-text search"),
-        ("5", "User Model", "Exploration tracking and understanding estimation"),
-        ("6", "Proactive Engine", "Deterministic UI guidance system"),
-        ("7", "Chat System", "RAG-powered streaming conversation"),
-        ("8", "End-to-End Data Flows", "Upload, explore, and chat workflows"),
-        ("9", "File Structure", "Server and client directory layout"),
-        ("10", "Cost Estimates", "Per-pipeline and per-interaction costs"),
+    nums_y = 180
+    draw_card(c, 60, nums_y - 10, W - 120, 60, BG_ELEVATED)
+    stats = [
+        ("6-Stage", "AI Pipeline"),
+        ("3 Views", "Graph Modes"),
+        ("10+", "CLI Commands"),
+        ("3 Depths", "Explanation Levels"),
     ]
+    col_w = (W - 120) / len(stats)
+    for i, (val, label) in enumerate(stats):
+        sx = 60 + i * col_w + col_w / 2
+        c.setFont("Helvetica-Bold", 18)
+        c.setFillColor(INDIGO)
+        vw = c.stringWidth(val, "Helvetica-Bold", 18)
+        c.drawString(sx - vw/2, nums_y + 24, val)
+        c.setFont("Helvetica", 8)
+        c.setFillColor(TEXT_SECONDARY)
+        lw = c.stringWidth(label, "Helvetica", 8)
+        c.drawString(sx - lw/2, nums_y + 8, label)
 
-    toc_cell_style = ParagraphStyle('TocCell', fontName='Helvetica', fontSize=9, leading=13, textColor=TEXT_PRIMARY)
-    toc_desc_style = ParagraphStyle('TocDesc', fontName='Helvetica', fontSize=7, leading=10, textColor=TEXT_MUTED)
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    draw_centered(c, "codebaseexplorer.com", 40)
+    c.drawRightString(W - 40, 40, "1 / 6")
 
-    for num, title, desc in toc_items:
-        from reportlab.platypus import ListFlowable
-        cell_content = [
-            Paragraph(f'<b>{title}</b>', toc_cell_style),
-            Paragraph(desc, toc_desc_style),
-        ]
-        toc_row = Table(
-            [[num, cell_content]],
-            colWidths=[30, content_width - 40]
-        )
-        toc_row.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, 0), BG_CODE),
-            ('TEXTCOLOR', (0, 0), (0, 0), ACCENT_BLUE),
-            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (0, 0), 11),
-            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BACKGROUND', (1, 0), (1, 0), BG_CARD),
-            ('LEFTPADDING', (1, 0), (1, 0), 12),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, BORDER),
-        ]))
-        story.append(toc_row)
-        story.append(Spacer(1, 3))
 
-    story.append(PageBreak())
+# PAGE 2: The AI Pipeline
+def page_pipeline(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 4, INDIGO, 4)
 
-    # ════════════════════════════════════════
-    # 1. DESIGN PRINCIPLES
-    # ════════════════════════════════════════
-    story.append(Paragraph("1. Design Principles", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(WHITE)
+    c.drawString(50, H - 50, "The AI Pipeline")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(50, H - 68, "6 stages transform raw code into an interactive visualization")
 
-    principles = [
-        ("No frameworks", "Uses Anthropic's SDK directly with composable patterns (prompt chaining, parallelization, orchestrator-workers, routing, evaluator-optimizer). No LangChain, no LangGraph.", ACCENT_BLUE),
-        ("Structured outputs everywhere", "Every Claude call uses tool-use (tool_choice: { type: 'tool', name: schemaName }) for guaranteed valid JSON. No regex parsing, no try/catch on malformed responses.", ACCENT_PURPLE),
-        ("Stream everything user-facing", "Pipeline progress, chat responses, and proactive insights all stream via SSE. The user never stares at a spinner wondering if something is broken.", ACCENT_GREEN),
-        ("Start simple, add complexity only where it improves outcomes", "Each pipeline stage exists because a single call demonstrably cannot produce the same quality output.", ACCENT_ORANGE),
-        ("Grounded in real code", "Every explanation, insight, and answer references actual files and line numbers from the user's codebase, retrieved via RAG \u2014 never from Claude's general training knowledge.", ACCENT_TEAL),
+    flow_y = H - 110
+    steps_flow = ["Upload", "Classify", "Analyze", "Synthesize", "Depths", "Embed", "Insights"]
+    colors_flow = [TEXT_TERTIARY, AMBER, INDIGO, VIOLET, EMERALD, CYAN, ROSE]
+    step_w = 68
+    gap = (W - 80 - len(steps_flow) * step_w) / (len(steps_flow) - 1)
+    sx = 40
+    for i, (label, color) in enumerate(zip(steps_flow, colors_flow)):
+        draw_flow_box(c, label, sx, flow_y, step_w, 24, color)
+        if i < len(steps_flow) - 1:
+            ax1 = sx + step_w + 2
+            ax2 = sx + step_w + gap - 2
+            c.setStrokeColor(TEXT_TERTIARY)
+            c.setLineWidth(1)
+            if gap > 8:
+                c.line(ax1, flow_y + 12, ax2, flow_y + 12)
+                c.line(ax2 - 4, flow_y + 15, ax2, flow_y + 12)
+                c.line(ax2 - 4, flow_y + 9, ax2, flow_y + 12)
+        sx += step_w + gap
+
+    stages = [
+        ("1", "File Classification", AMBER,
+         "Reads uploaded files, detects framework and language (Express, Next.js, Django, etc.), "
+         "scores files by importance, filters to the top 100 for AI analysis, and uploads file "
+         "contents to Supabase Storage."),
+        ("2", "Parallel File Analysis", INDIGO,
+         "Claude analyzes files in batches of 50 with 3 concurrent waves. For each file: purpose, "
+         "key concepts (2-3 keywords), exports, dependencies, complexity score, and role. "
+         "Results stored in the database."),
+        ("3", "Concept Synthesis", VIOLET,
+         "Claude reads all file analyses and groups related files into 3-10 architectural concepts. "
+         "Each concept gets a name, color, real-world metaphor, one-liner, explanation, and importance "
+         "level. Edges between concepts capture relationships and strength."),
+        ("4", "Depth Mapping", EMERALD,
+         "Creates 3 explanation levels per concept: Conceptual (metaphors, no jargon for beginners), "
+         "Applied (how it works practically), and Under the Hood (implementation details, algorithms). "
+         "Users choose their depth level."),
+        ("5", "File Embeddings", CYAN,
+         "Chunks each file into 500-character segments with overlap, then embeds them via OpenAI. "
+         "Stored in a code_chunks table to enable RAG (Retrieval Augmented Generation) for the "
+         "context-aware chat system."),
+        ("6", "Insights & Quizzes", ROSE,
+         "Generates proactive architecture insights (risks, patterns, praise, suggestions) and "
+         "comprehension quiz questions per concept. Quizzes include multiple choice, matching, "
+         "ordering, and fill-in-the-blank with varying difficulty."),
     ]
 
-    principle_title_style = ParagraphStyle('PrincipleTitle', fontName='Helvetica-Bold', fontSize=9, leading=13, textColor=TEXT_PRIMARY)
-    principle_desc_style = ParagraphStyle('PrincipleDesc', fontName='Helvetica', fontSize=8, leading=12, textColor=TEXT_SECONDARY)
+    card_y = flow_y - 50
+    card_h = 82
+    card_gap = 8
+    margin_x = 50
+    card_w = W - 2 * margin_x
 
-    for i, (title, desc, color) in enumerate(principles):
-        cell_content = [
-            Paragraph(f'<b>{title}</b>', ParagraphStyle('PT', fontName='Helvetica-Bold', fontSize=9, leading=13, textColor=color)),
-            Paragraph(desc, principle_desc_style),
-        ]
-        row_table = Table([[str(i + 1), cell_content]], colWidths=[35, content_width - 45])
-        row_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, 0), color),
-            ('TEXTCOLOR', (0, 0), (0, 0), BG_DARK),
-            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (0, 0), 14),
-            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BACKGROUND', (1, 0), (1, 0), BG_CARD),
-            ('LEFTPADDING', (1, 0), (1, 0), 12),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-            ('ROUNDEDCORNERS', [4, 4, 4, 4]),
-        ]))
-        story.append(row_table)
-        story.append(Spacer(1, 6))
+    for num, title, color, desc in stages:
+        draw_card(c, margin_x, card_y - card_h, card_w, card_h, BG_SURFACE)
 
-    story.append(PageBreak())
+        c.setFillColor(color)
+        c.circle(margin_x + 22, card_y - card_h + card_h / 2, 12, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(WHITE)
+        nw = c.stringWidth(num, "Helvetica-Bold", 12)
+        c.drawString(margin_x + 22 - nw/2, card_y - card_h + card_h/2 - 4, num)
 
-    # ════════════════════════════════════════
-    # 2. SYSTEM ARCHITECTURE
-    # ════════════════════════════════════════
-    story.append(Paragraph("2. System Architecture", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
+        c.setFont("Helvetica-Bold", 11)
+        c.setFillColor(color)
+        c.drawString(margin_x + 44, card_y - 16, title)
 
-    story.append(ArchitectureDiagram(content_width))
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Three-tier architecture: React client, Hono API server, and Supabase persistence layer.", s['caption']))
-    story.append(Spacer(1, 10))
+        draw_text(c, desc, margin_x + 44, card_y - 32, size=8.5, color=TEXT_SECONDARY,
+                  max_width=card_w - 60)
 
-    story.append(Paragraph("Why Hono", s['h3']))
-    story.append(Paragraph(
-        "The app is Vite + React. Adding Next.js would mean migrating the entire frontend or running two separate frameworks. "
-        "Cloudflare Workers have execution time limits that complicate multi-minute pipelines. "
-        "<b>Hono</b> is lightweight (~14KB), runs on Node.js alongside the existing Vite dev server, "
-        "has first-class SSE streaming support, and can deploy to Cloudflare Workers, Vercel Edge, or plain Node.js later. "
-        "In development, Vite proxies /api/* to the Hono server on port 3007.",
-        s['body']))
+        card_y -= card_h + card_gap
 
-    story.append(PageBreak())
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    c.drawRightString(W - 40, 40, "2 / 6")
 
-    # ════════════════════════════════════════
-    # 3. INGESTION PIPELINE
-    # ════════════════════════════════════════
-    story.append(Paragraph("3. Ingestion Pipeline", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 8))
 
-    story.append(Paragraph(
-        "The pipeline transforms a ZIP file into a rich, queryable knowledge base. It runs as an async background job \u2014 "
-        "the client gets a project ID immediately and subscribes to progress updates via SSE from /api/pipeline/:id/stream.",
-        s['body']))
-    story.append(Spacer(1, 6))
+# PAGE 3: Graph Visualization
+def page_graph(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 4, CYAN, 4)
 
-    story.append(PipelineDiagram(content_width))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("7-stage pipeline from ZIP upload to fully-indexed knowledge base.", s['caption']))
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(WHITE)
+    c.drawString(50, H - 50, "Graph Visualization")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(50, H - 68, "Three interactive layers for exploring architecture at any level of detail")
 
-    story.append(PageBreak())
+    margin_x = 50
+    card_w = W - 2 * margin_x
 
-    # Stage details
-    stages_detail = [
-        ("Stage 1: File Extraction & Classification", ACCENT_BLUE, "Client (fileParser.js)", [
-            "Extracts ZIP, filters out non-code files (node_modules, .git, dist, build)",
-            "Identifies code files by extension",
-            "Extracts imports via regex (ES6, CommonJS, Python, Go, Rust)",
-            "Resolves relative import paths to actual file paths",
-            "Sends file tree, contents, and import edges to server",
+    # View 1: Concept Map
+    y = H - 100
+    draw_card(c, margin_x, y - 195, card_w, 195, BG_SURFACE)
+
+    draw_badge(c, "DEFAULT VIEW", margin_x + 16, y - 14, INDIGO)
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(WHITE)
+    c.drawString(margin_x + 110, y - 18, "Concept Map")
+
+    desc1 = (
+        "Force-directed graph powered by D3-force physics simulation. Each bubble represents "
+        "an architectural concept, sized proportionally to the number of files it contains. "
+        "Labeled edges show relationships between concepts. Built with a custom HTML5 Canvas "
+        "renderer (just 2KB vs. 23MB for off-the-shelf libraries)."
+    )
+    draw_text(c, desc1, margin_x + 16, y - 40, size=9, color=TEXT_SECONDARY, max_width=card_w - 32)
+
+    # Mini graph illustration
+    gx, gy = W / 2, y - 140
+    nodes = [
+        (gx - 80, gy, 22, INDIGO, "Auth"),
+        (gx + 60, gy - 20, 28, VIOLET, "API"),
+        (gx, gy + 30, 18, EMERALD, "DB"),
+        (gx + 90, gy + 25, 15, CYAN, "Utils"),
+        (gx - 40, gy - 30, 20, AMBER, "UI"),
+    ]
+    c.setStrokeColor(HexColor("#2a2b4a"))
+    c.setLineWidth(1)
+    for i in range(len(nodes)):
+        for j in range(i+1, len(nodes)):
+            if abs(i - j) <= 2:
+                c.line(nodes[i][0], nodes[i][1], nodes[j][0], nodes[j][1])
+    for nx, ny, r, color, label in nodes:
+        c.setFillColor(Color(color.red, color.green, color.blue, alpha=0.15))
+        c.circle(nx, ny, r + 6, fill=1, stroke=0)
+        c.setFillColor(color)
+        c.circle(nx, ny, r, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 7)
+        c.setFillColor(WHITE)
+        lw = c.stringWidth(label, "Helvetica-Bold", 7)
+        c.drawString(nx - lw/2, ny - 3, label)
+
+    # View 2: Files View
+    y2 = y - 215
+    draw_card(c, margin_x, y2 - 120, card_w / 2 - 5, 120, BG_SURFACE)
+    draw_badge(c, "FILES VIEW", margin_x + 16, y2 - 14, EMERALD)
+
+    desc2 = (
+        "Individual files grouped in soft dashed "
+        "clusters by concept. Select a file to "
+        "see its import relationships highlighted "
+        "across the graph. Great for tracing "
+        "dependencies."
+    )
+    draw_text(c, desc2, margin_x + 16, y2 - 36, size=8.5, color=TEXT_SECONDARY,
+              max_width=card_w / 2 - 40)
+
+    # View 3: Circle Pack
+    cp_x = margin_x + card_w / 2 + 5
+    draw_card(c, cp_x, y2 - 120, card_w / 2 - 5, 120, BG_SURFACE)
+    draw_badge(c, "CIRCLE PACK", cp_x + 16, y2 - 14, VIOLET)
+
+    desc3 = (
+        "Hierarchical drill-in visualization. "
+        "Zoom from the universe bubble down into "
+        "concepts, sub-concepts, and individual "
+        "code elements. Uses circle-packing layout "
+        "algorithm."
+    )
+    draw_text(c, desc3, cp_x + 16, y2 - 36, size=8.5, color=TEXT_SECONDARY,
+              max_width=card_w / 2 - 40)
+
+    # Interactions section
+    y3 = y2 - 145
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(CYAN)
+    c.drawString(margin_x, y3, "Key Interactions")
+
+    interactions = [
+        "Click to select \u2014 fades unrelated nodes to 20% opacity, highlights connected edges",
+        "Smooth zoom and pan with momentum physics, clamped to prevent losing the graph",
+        "Keyboard navigation: arrow keys to move between nodes, +/- to zoom, Enter to select",
+        "Touch gestures: pinch-to-zoom, two-finger pan, haptic feedback on mobile selection",
+        "Auto-expand and collapse nodes based on viewport zoom level (heuristic radius check)",
+        "Edge labels appear on hover only \u2014 keeps the graph clean at default zoom",
+        "Nodes have soft glows, idle float animations, and selection pulse effects",
+    ]
+    iy = y3 - 22
+    for item in interactions:
+        h = draw_bullet(c, item, margin_x + 8, iy, TEXT_SECONDARY, CYAN, 8.5, card_w - 30)
+        iy -= max(h, 14)
+
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    c.drawRightString(W - 40, 40, "3 / 6")
+
+
+# PAGE 4: Chat, Inspector & Features
+def page_features(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 4, VIOLET, 4)
+
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(WHITE)
+    c.drawString(50, H - 50, "Chat, Inspector & Features")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(50, H - 68, "AI-powered chat with RAG, deep code inspection, and guided learning")
+
+    margin_x = 50
+    card_w = (W - 2 * margin_x - 10) / 2
+    full_w = W - 2 * margin_x
+
+    y = H - 90
+    ch = 250
+    draw_card(c, margin_x, y - ch, card_w, ch, BG_SURFACE)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(VIOLET)
+    c.drawString(margin_x + 16, y - 20, "Chat System")
+
+    chat_items = [
+        "RAG-powered: message is embedded, top 10 code chunks retrieved for context",
+        "Claude generates streaming SSE responses with full codebase awareness",
+        "Clickable concept and file links inline \u2014 [[concept:auth]] or [[file:index.ts]]",
+        "Graph expansion triggers: auto-expand concepts, highlight paths on the graph",
+        "Multi-turn context with last 6 messages for coherent conversations",
+        "Session persistence across page reloads and devices",
+        "Suggested questions carousel based on the codebase analysis",
+        "Chat history browser with sessions grouped by time",
+    ]
+    iy = y - 42
+    for item in chat_items:
+        h = draw_bullet(c, item, margin_x + 16, iy, TEXT_SECONDARY, VIOLET, 8, card_w - 36)
+        iy -= max(h, 13)
+
+    rx = margin_x + card_w + 10
+    draw_card(c, rx, y - ch, card_w, ch, BG_SURFACE)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(AMBER)
+    c.drawString(rx + 16, y - 20, "Inspector Panel")
+
+    inspector_items = [
+        "Right sidebar showing the selected concept's full details",
+        "Concept card with file list, related edges, and real-world metaphor",
+        "Three depth levels with expandable explanations",
+        "Reading order: guided path or import-importance ranking",
+        "Sub-concept expansion \u2014 drill into nested architecture layers on demand",
+        "Code walkthrough with syntax-highlighted file inspection",
+        "Line-range focus: see only the relevant portion of large files",
+        "Animates in from the side with smooth 300ms transition",
+    ]
+    iy = y - 42
+    for item in inspector_items:
+        h = draw_bullet(c, item, rx + 16, iy, TEXT_SECONDARY, AMBER, 8, card_w - 36)
+        iy -= max(h, 13)
+
+    # Other Features
+    y2 = y - ch - 20
+    feat_h = 280
+    draw_card(c, margin_x, y2 - feat_h, full_w, feat_h, BG_SURFACE)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(EMERALD)
+    c.drawString(margin_x + 16, y2 - 20, "More Features")
+
+    features = [
+        ("Guided Tour Mode", INDIGO,
+         "Step-by-step path through concepts ordered by architectural criticality. "
+         "Progress tracked per user. Perfect for first-time exploration."),
+        ("Three Depth Levels", EMERALD,
+         "Conceptual (metaphors, no jargon), Applied (how things work practically), "
+         "Under the Hood (implementation details). Preference persisted."),
+        ("Proactive Insights", AMBER,
+         "AI-generated cards highlighting architecture risks, design patterns, praise for good "
+         "practices, and actionable improvement suggestions."),
+        ("Quiz Gate", ROSE,
+         "Comprehension quizzes before exploring further. Multiple choice, matching, ordering, "
+         "fill-in-the-blank. Analytics per concept track understanding."),
+        ("Shared Viewer", CYAN,
+         "Public read-only links at /s/:id. No authentication required. Share your project's "
+         "architecture with teammates or in documentation."),
+        ("Settings & Personalization", VIOLET,
+         "Dark/light theme toggle, depth level preference, persona selection (OSS contributor, "
+         "onboarding engineer, due diligence reviewer, legacy code auditor)."),
+    ]
+
+    fy = y2 - 44
+    left_x = margin_x + 16
+    right_x = margin_x + full_w / 2 + 8
+    for i, (title, color, desc) in enumerate(features):
+        fx = left_x if i % 2 == 0 else right_x
+        if i % 2 == 0 and i > 0:
+            fy -= 6
+
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(color)
+        c.drawString(fx, fy, title)
+
+        h = draw_text(c, desc, fx, fy - 14, size=7.5, color=TEXT_SECONDARY,
+                      max_width=full_w / 2 - 32)
+        if i % 2 == 1:
+            fy -= max(h + 14, 38)
+
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    c.drawRightString(W - 40, 40, "4 / 6")
+
+
+# PAGE 5: Terminal CLI
+def page_cli(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 4, AMBER, 4)
+
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(WHITE)
+    c.drawString(50, H - 50, "Terminal CLI")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(50, H - 68, "Analyze any local repo from the command line with cx")
+
+    margin_x = 50
+    full_w = W - 2 * margin_x
+
+    # Terminal mockup
+    term_y = H - 90
+    term_h = 130
+    draw_card(c, margin_x, term_y - term_h, full_w, term_h, HexColor("#0d1117"), HexColor("#30363d"), 6)
+
+    for i, col in enumerate([ROSE, AMBER, EMERALD]):
+        c.setFillColor(col)
+        c.circle(margin_x + 16 + i * 16, term_y - 12, 4, fill=1, stroke=0)
+
+    term_lines = [
+        [("$ ", TEXT_TERTIARY), ("cx", EMERALD), ("  # analyze current repo", TEXT_TERTIARY)],
+        [],
+        [("  Reading local files...", AMBER)],
+        [("  Detected: React + Express (TypeScript)", TEXT_SECONDARY)],
+        [("  Analyzing 47 files in 3 waves...", CYAN)],
+        [("  Synthesizing 7 concepts with 12 edges", VIOLET)],
+        [],
+        [("  View at: ", TEXT_SECONDARY), ("https://codebaseexplorer.com/explore/abc123", INDIGO)],
+    ]
+    ty = term_y - 34
+    for parts in term_lines:
+        tx = margin_x + 16
+        for text, color in parts:
+            c.setFont("Courier", 8.5)
+            c.setFillColor(color)
+            c.drawString(tx, ty, text)
+            tx += c.stringWidth(text, "Courier", 8.5)
+        ty -= 12
+
+    # Commands
+    y = term_y - term_h - 20
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(AMBER)
+    c.drawString(margin_x, y, "Commands")
+
+    commands = [
+        ("cx", "Interactive TUI mode. Reads local repo, detects framework, sends to server, "
+         "streams analysis progress with real-time updates. Returns a share URL and opens browser."),
+        ("cx <query>", "One-shot mode. Analyzes the repo and immediately answers your question "
+         "about it. If the repo was previously analyzed, skips straight to the chat."),
+        ("cx chat", "Interactive multi-turn chat on the last analyzed repo. Full conversation "
+         "history with streaming responses. Same RAG engine as the web app."),
+        ("cx login", "OAuth flow via browser. Opens Supabase auth page, receives callback, "
+         "stores refresh token in ~/.gui/credentials.json. Auto-refreshes on expiry."),
+        ("cx projects", "List all cached projects with creation date, project ID, and framework. "
+         "Projects are cached locally for instant re-access."),
+        ("cx open", "Open the web UI for the last analyzed repo in your default browser."),
+        ("cx share", "Print a shareable public link to the project visualization."),
+        ("cx status", "Check the current pipeline status on the server (useful for large repos)."),
+        ("cx history [n]", "View chat sessions grouped by time period (Today, Yesterday, This Week, Older). "
+         "Optionally limit to last n sessions."),
+        ("cx rerun", "Re-analyze the current repo with the latest AI pipeline version. "
+         "Useful after pipeline improvements."),
+    ]
+
+    cy = y - 22
+    for cmd, desc in commands:
+        c.setFont("Courier-Bold", 9)
+        c.setFillColor(BG_ACCENT)
+        cw = c.stringWidth(cmd, "Courier-Bold", 9) + 10
+        c.roundRect(margin_x + 8, cy - 3, cw, 14, 3, fill=1, stroke=0)
+        c.setFillColor(AMBER)
+        c.drawString(margin_x + 13, cy, cmd)
+
+        h = draw_text(c, desc, margin_x + cw + 20, cy, size=8, color=TEXT_SECONDARY,
+                      max_width=full_w - cw - 32)
+        cy -= max(h + 4, 18)
+
+    # CLI Features
+    cy -= 12
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(AMBER)
+    c.drawString(margin_x, cy, "CLI Features")
+
+    cli_feats = [
+        "React-based terminal UI with Ink \u2014 progress bars, spinners, interactive menus",
+        "ASCII concept map preview rendered directly in the terminal",
+        "Automatic OAuth token refresh (60-second buffer before expiry)",
+        "Cross-platform chat history \u2014 CLI and web app share the same sessions",
+        "Local project caching for instant re-access without re-analysis",
+        "Configurable API endpoint via CX_API_URL environment variable",
+    ]
+    cy -= 18
+    for feat in cli_feats:
+        h = draw_bullet(c, feat, margin_x + 8, cy, TEXT_SECONDARY, AMBER, 8.5, full_w - 30)
+        cy -= max(h, 14)
+
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    c.drawRightString(W - 40, 40, "5 / 6")
+
+
+# PAGE 6: Architecture & Data Flow
+def page_architecture(c):
+    draw_bg(c)
+    draw_header_bar(c, H - 4, EMERALD, 4)
+
+    c.setFont("Helvetica-Bold", 22)
+    c.setFillColor(WHITE)
+    c.drawString(50, H - 50, "Architecture & Data Flow")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(TEXT_SECONDARY)
+    c.drawString(50, H - 68, "End-to-end system architecture from upload to interactive exploration")
+
+    margin_x = 50
+    full_w = W - 2 * margin_x
+
+    # Web Flow
+    y = H - 100
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(INDIGO)
+    c.drawString(margin_x, y, "WEB FLOW")
+
+    web_steps = [
+        ("User uploads ZIP", TEXT_TERTIARY),
+        ("JSZip extracts", AMBER),
+        ("6-stage pipeline", INDIGO),
+        ("Stored in Supabase", EMERALD),
+        ("D3 renders graph", CYAN),
+        ("User explores", VIOLET),
+    ]
+    sx = margin_x
+    sw = 80
+    sg = 6
+    wy = y - 30
+    for i, (label, color) in enumerate(web_steps):
+        draw_flow_box(c, label, sx, wy, sw, 22, color)
+        if i < len(web_steps) - 1:
+            c.setStrokeColor(TEXT_TERTIARY)
+            c.setLineWidth(0.8)
+            c.line(sx + sw + 1, wy + 11, sx + sw + sg - 1, wy + 11)
+        sx += sw + sg
+
+    # CLI Flow
+    cy = wy - 40
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(AMBER)
+    c.drawString(margin_x, cy, "CLI FLOW")
+
+    cli_steps = [
+        ("cx in repo dir", TEXT_TERTIARY),
+        ("Scan local files", AMBER),
+        ("Detect framework", ORANGE),
+        ("Send to server", INDIGO),
+        ("Same 6 stages", VIOLET),
+        ("Share URL / chat", EMERALD),
+    ]
+    sx = margin_x
+    cy2 = cy - 30
+    for i, (label, color) in enumerate(cli_steps):
+        draw_flow_box(c, label, sx, cy2, sw, 22, color)
+        if i < len(cli_steps) - 1:
+            c.setStrokeColor(TEXT_TERTIARY)
+            c.setLineWidth(0.8)
+            c.line(sx + sw + 1, cy2 + 11, sx + sw + sg - 1, cy2 + 11)
+        sx += sw + sg
+
+    # Architecture Layers
+    ay = cy2 - 50
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(WHITE)
+    c.drawString(margin_x, ay, "System Architecture")
+
+    layers = [
+        ("FRONTEND", INDIGO, [
+            "React 19 + Vite 8 build system",
+            "Custom HTML5 Canvas graph renderer",
+            "D3-force physics simulation",
+            "Zustand state management",
+            "Tailwind v4 styling",
+            "Mobile-responsive with touch gestures",
         ]),
-        ("Stage 2: Sequential File Analysis", ACCENT_ORANGE, "Server \u2192 Claude Haiku", [
-            "Files processed in batches of 15 (content truncated to 1,500 chars)",
-            "Batches run sequentially with 60-second waits between (rate limiting)",
-            "Structured output via tool-use: path, purpose, concepts, key_exports, depends_on, complexity, role",
-            "Failed batches fall back to minimal stub analyses",
-            "Results stored in Supabase files table",
+        ("API SERVER", VIOLET, [
+            "Hono lightweight web framework",
+            "Routes: pipeline, chat, explain, quiz, cx, admin",
+            "SSE streaming for real-time responses",
+            "CORS + auth middleware",
+            "Deployed on Vercel",
         ]),
-        ("Stage 3: Concept Synthesis", ACCENT_PURPLE, "Server \u2192 1 Claude Sonnet call", [
-            "Receives all file analyses + framework detection",
-            "Identifies natural conceptual groupings (3-20 concepts)",
-            "Each concept: id, name, emoji, color, metaphor, one_liner, explanation, deep_explanation",
-            "Generates edges with relationship labels and strength",
-            "Returns suggested starting concept and codebase summary",
-            "Graph renders in UI at this point \u2014 user can start exploring",
+        ("AI LAYER", CYAN, [
+            "Claude Sonnet 4.6 for all analysis",
+            "Structured JSON output via tool_use",
+            "OpenAI embeddings for RAG retrieval",
+            "Batch processing (50 files/call, 3 waves)",
+            "Graph expansion operations from chat",
         ]),
-        ("Stage 4: Depth Mapping", ACCENT_TEAL, "Server \u2192 1 Claude Sonnet call", [
-            "Generates multi-level explanations for each concept",
-            "Beginner: only analogies and everyday language, no code terms",
-            "Intermediate: mentions technical terms but explains inline",
-            "Advanced: assumes programming familiarity, references specific patterns",
-            "Powers the adaptive explanation system in InspectorPanel",
-        ]),
-        ("Stage 5: Insight Generation", ACCENT_PINK, "Server \u2192 1 Claude Sonnet call", [
-            "Prompt: think like a senior engineer doing a code review",
-            "6 categories: architecture, risk, pattern, praise, suggestion, complexity",
-            "Each insight: title, category, summary, detail, related concepts/files",
-            "Priority scoring (1-10) and prerequisite concepts for ordering",
-        ]),
-        ("Stage 6: Embedding & Indexing", ACCENT_GREEN, "Server \u2192 OpenAI API", [
-            "Splits each file into ~800-token chunks with 10% overlap",
-            "Contextual prefix per chunk: file path, purpose, concept name",
-            "Embeds with OpenAI text-embedding-3-small (1536 dimensions)",
-            "Batch processing: up to 2,048 texts per API call",
-            "Stored in pgvector with HNSW index (cosine) + GIN full-text index",
-        ]),
-        ("Stage 7: Proactive Seeding", ACCENT_CYAN, "Server \u2192 1 Claude Sonnet call", [
-            "Generates ordered exploration path for the user",
-            "Based on concept graph, insights, and suggested starting concept",
-            "Not a rigid tour \u2014 proactive engine adjusts in real-time",
-            "Stored in user_state table as exploration_path array",
+        ("DATA LAYER", EMERALD, [
+            "Supabase PostgreSQL for all metadata",
+            "Supabase Storage for file contents",
+            "Supabase Auth (OAuth + refresh tokens)",
+            "Tables: projects, files, concepts, edges,",
+            "  code_chunks, chat_sessions, chat_messages",
         ]),
     ]
 
-    for title, color, runner, points in stages_detail:
-        story.append(Paragraph(title, s['h2']))
+    layer_h = 108
+    layer_gap = 8
+    ly = ay - 24
 
-        # Runner info
-        runner_para = Paragraph(
-            f'<font color="{color.hexval()}"><b>Runs on:</b></font> '
-            f'<font color="#8B949E">{runner}</font>', s['body'])
-        story.append(runner_para)
+    for name, color, items in layers:
+        draw_card(c, margin_x, ly - layer_h, full_w, layer_h, BG_SURFACE)
 
-        for point in points:
-            story.append(Paragraph(
-                f'<font color="{color.hexval()}">\u2022</font> {point}',
-                s['bullet']))
-        story.append(Spacer(1, 8))
+        c.setFillColor(color)
+        c.roundRect(margin_x + 12, ly - 22, 90, 16, 4, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(WHITE)
+        lw = c.stringWidth(name, "Helvetica-Bold", 8)
+        c.drawString(margin_x + 12 + (90 - lw) / 2, ly - 18, name)
 
-    story.append(PageBreak())
+        col_w = (full_w - 40) / 2
+        ix = margin_x + 16
+        iy = ly - 40
+        for j, item in enumerate(items):
+            cx_pos = ix if j % 2 == 0 else ix + col_w
+            draw_bullet(c, item, cx_pos, iy, TEXT_SECONDARY, color, 8, col_w - 20)
+            if j % 2 == 1:
+                iy -= 15
 
-    # ════════════════════════════════════════
-    # 4. SEMANTIC MEMORY (RAG)
-    # ════════════════════════════════════════
-    story.append(Paragraph("4. Semantic Memory (RAG)", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
+        ly -= layer_h + layer_gap
 
-    story.append(Paragraph(
-        "Every time the app explains something, it must reference actual code. The RAG system ensures "
-        "explanations are grounded in the user's codebase, not Claude's training data.",
-        s['body']))
-    story.append(Spacer(1, 6))
+    c.setFont("Helvetica", 8)
+    c.setFillColor(TEXT_TERTIARY)
+    draw_centered(c, "Built with Claude API  |  codebaseexplorer.com", 40)
+    c.drawRightString(W - 40, 40, "6 / 6")
 
-    story.append(Paragraph("Retrieval Flow", s['h2']))
 
-    rag_steps = [
-        ("1", "Generate query embedding from the question/topic (OpenAI text-embedding-3-small)", ACCENT_BLUE),
-        ("2", "Call search_code_chunks RPC via Supabase with query embedding + optional concept filter", ACCENT_PURPLE),
-        ("3", "Hybrid search: 70% vector similarity (cosine) + 30% lexical (tsvector)", ACCENT_GREEN),
-        ("4", "Fallback: if RPC fails, simple full-text search without embeddings", ACCENT_ORANGE),
-        ("5", "Format retrieved chunks as XML-tagged context for Claude", ACCENT_TEAL),
-        ("6", "Stream Claude response with retrieved context + user's understanding level", ACCENT_CYAN),
-    ]
+def main():
+    c_pdf = canvas.Canvas(OUTPUT, pagesize=letter)
+    c_pdf.setTitle("Codebase Explorer \u2014 How It Works")
+    c_pdf.setAuthor("Codebase Explorer")
+    c_pdf.setSubject("AI-Powered Codebase Comprehension")
 
-    for num, desc, color in rag_steps:
-        row = Table([[num, desc]], colWidths=[30, content_width - 40])
-        row.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, 0), color),
-            ('TEXTCOLOR', (0, 0), (0, 0), BG_DARK),
-            ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (0, 0), 10),
-            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BACKGROUND', (1, 0), (1, 0), BG_CARD),
-            ('TEXTCOLOR', (1, 0), (1, 0), TEXT_SECONDARY),
-            ('FONTNAME', (1, 0), (1, 0), 'Helvetica'),
-            ('FONTSIZE', (1, 0), (1, 0), 8),
-            ('LEFTPADDING', (1, 0), (1, 0), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
-            ('ROUNDEDCORNERS', [3, 3, 3, 3]),
-        ]))
-        story.append(row)
-        story.append(Spacer(1, 3))
+    pages = [page_title, page_pipeline, page_graph, page_features, page_cli, page_architecture]
+    for i, page_fn in enumerate(pages):
+        page_fn(c_pdf)
+        if i < len(pages) - 1:
+            c_pdf.showPage()
 
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Database Schema", s['h2']))
-    story.append(Spacer(1, 6))
-
-    schema_data = [
-        ["Table", "Purpose", "Key Columns"],
-        ["projects", "One row per uploaded codebase", "name, framework, pipeline_status, pipeline_progress"],
-        ["files", "Every code file with analysis", "path, content, analysis (jsonb), concept_id, role"],
-        ["concepts", "Extracted concepts", "name, emoji, metaphor, explanation, beginner/intermediate/advanced"],
-        ["concept_edges", "Relationships between concepts", "source_key, target_key, relationship, strength"],
-        ["code_chunks", "Chunked code for RAG", "content, context_summary, embedding (vector 1536), fts"],
-        ["user_state", "Exploration tracking", "explored_concepts, time_per_concept, understanding_level"],
-        ["insights", "Proactive insights queue", "title, category, summary, priority, requires_understanding"],
-        ["chat_messages", "Conversation history", "role, content, context (jsonb)"],
-    ]
-
-    schema_table = styled_table(schema_data, [70, 155, content_width - 235], ACCENT_GREEN)
-    story.append(schema_table)
-
-    story.append(PageBreak())
-
-    # ════════════════════════════════════════
-    # 5. USER MODEL
-    # ════════════════════════════════════════
-    story.append(Paragraph("5. User Model", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Tracking Signals", s['h2']))
-
-    tracking_data = [
-        ["Signal", "How Collected", "What It Tells Us"],
-        ["Concepts viewed", "Click/tap on concept node", "What they've seen"],
-        ["Time per concept", "Timer from select to deselect", "How much they engaged"],
-        ["Files opened", "Click on file in inspector", "Depth of exploration"],
-        ["Insights interaction", "Dismiss vs expand behavior", "What interests them"],
-        ["Questions asked", "Chat input", "What they don't understand"],
-    ]
-    story.append(styled_table(tracking_data, [100, 160, content_width - 270], ACCENT_PURPLE))
-
-    story.append(Spacer(1, 12))
-    story.append(Paragraph("Understanding Level Estimation", s['h2']))
-
-    level_data = [
-        ["Level", "Time Threshold", "UI Behavior"],
-        ["unseen", "Not viewed", "Default explanation hidden"],
-        ["glanced", "< 5 seconds", "Brief summary shown"],
-        ["beginner", "5 - 30 seconds", "Beginner-level explanation (analogies only)"],
-        ["intermediate", "30 - 120 seconds", "Intermediate explanation (technical terms explained)"],
-        ["advanced", "> 120 seconds", "Advanced explanation (patterns & libraries)"],
-    ]
-    story.append(styled_table(level_data, [80, 100, content_width - 190], ACCENT_TEAL))
-
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(
-        "User state updates are <b>debounced and sent to Supabase every 5 seconds</b> via PATCH /api/user-state. "
-        "State is also flushed on component unmount.",
-        s['body']))
-
-    story.append(Spacer(1, 16))
-
-    # ════════════════════════════════════════
-    # 6. PROACTIVE ENGINE
-    # ════════════════════════════════════════
-    story.append(Paragraph("6. Proactive Engine", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph(
-        "The core differentiator. The frontend hook polls POST /api/proactive every 15 seconds. "
-        "The server-side engine uses <b>purely deterministic rules</b> \u2014 no Claude calls at runtime \u2014 "
-        "to decide the next UI action based on the user's exploration state.",
-        s['body']))
-    story.append(Spacer(1, 8))
-
-    story.append(ProactiveEngineDiagram(content_width))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("All proactive decisions are deterministic \u2014 zero cost, low latency.", s['caption']))
-
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("UI Actions", s['h3']))
-
-    actions_data = [
-        ["Action", "UI Effect"],
-        ["highlight_concept", "Pulse a concept node on the graph canvas"],
-        ["show_insight", "Display a floating, color-coded insight card"],
-        ["suggest_connection", "Highlight an edge between concepts"],
-        ["suggest_file", "Recommend a specific file to look at"],
-        ["show_summary", "Show exploration progress card"],
-        ["deepen_current", "Offer deeper explanation of current concept"],
-        ["nothing", "No change \u2014 user is engaged, don't interrupt"],
-    ]
-    story.append(styled_table(actions_data, [120, content_width - 130], ACCENT_TEAL))
-
-    story.append(PageBreak())
-
-    # ════════════════════════════════════════
-    # 7. CHAT SYSTEM
-    # ════════════════════════════════════════
-    story.append(Paragraph("7. Chat System", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph(
-        "Chat is secondary \u2014 a small input at the bottom-left of the screen, not a prominent chatbot. "
-        "It has full RAG context and streams responses via SSE.",
-        s['body']))
-    story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Differentiators", s['h3']))
-    differentiators = [
-        ("<b>Full codebase context</b> \u2014 every response grounded in retrieved code chunks via hybrid search", ACCENT_BLUE),
-        ("<b>Awareness of user state</b> \u2014 \"what does this do?\" knows what \"this\" is (selected node)", ACCENT_PURPLE),
-        ("<b>Adaptive language</b> \u2014 uses the user's estimated understanding level for the relevant concept", ACCENT_GREEN),
-        ("<b>Graph integration</b> \u2014 [[concept:key]] and [[file:path]] references rendered as clickable links", ACCENT_TEAL),
-    ]
-    for text, color in differentiators:
-        story.append(Paragraph(
-            f'<font color="{color.hexval()}">\u25B6</font> {text}',
-            s['bullet']))
-
-    story.append(Spacer(1, 16))
-
-    # ════════════════════════════════════════
-    # 8. DATA FLOWS
-    # ════════════════════════════════════════
-    story.append(Paragraph("8. End-to-End Data Flows", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    story.append(DataFlowDiagram(content_width))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("Three primary user workflows: upload, explore, and chat.", s['caption']))
-
-    story.append(PageBreak())
-
-    # ════════════════════════════════════════
-    # 9. FILE STRUCTURE
-    # ════════════════════════════════════════
-    story.append(Paragraph("9. File Structure", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    # Server files
-    story.append(Paragraph("Server (Node.js + Hono)", s['h2']))
-
-    server_files = [
-        ["Path", "Purpose"],
-        ["server/index.ts", "Hono app entry point (port 3007)"],
-        ["server/routes/pipeline.ts", "POST /start, GET /:id/stream, GET /:id/data"],
-        ["server/routes/chat.ts", "POST /api/chat (streaming RAG chat)"],
-        ["server/routes/explain.ts", "POST /api/explain (streaming explanations)"],
-        ["server/routes/proactive.ts", "POST /api/proactive (UI guidance)"],
-        ["server/routes/user-state.ts", "PATCH /api/user-state (exploration tracking)"],
-        ["server/pipeline/orchestrator.ts", "Pipeline orchestration (stages 1-7)"],
-        ["server/pipeline/fileAnalysis.ts", "Stage 2: sequential file analysis (Haiku)"],
-        ["server/pipeline/conceptSynthesis.ts", "Stage 3: concept graph generation (Sonnet)"],
-        ["server/pipeline/depthMapping.ts", "Stage 4: multi-level explanations"],
-        ["server/pipeline/insightGeneration.ts", "Stage 5: senior engineer insights"],
-        ["server/pipeline/embedding.ts", "Stage 6: chunking + OpenAI embedding"],
-        ["server/pipeline/proactiveSeeding.ts", "Stage 7: exploration path generation"],
-        ["server/rag/chunker.ts", "~800-token chunks with contextual prefixes"],
-        ["server/rag/embedder.ts", "OpenAI text-embedding-3-small client"],
-        ["server/rag/retriever.ts", "Hybrid search via Supabase RPC"],
-        ["server/ai/claude.ts", "Anthropic SDK wrapper (streaming + tool-use)"],
-        ["server/ai/schemas.ts", "All JSON schemas for structured outputs"],
-        ["server/proactive/engine.ts", "Deterministic proactive decision rules"],
-        ["server/db/supabase.ts", "Supabase client"],
-    ]
-    story.append(styled_table(server_files, [200, content_width - 210], ACCENT_PURPLE))
-
-    story.append(Spacer(1, 12))
-    story.append(Paragraph("Client (React + Vite)", s['h2']))
-
-    client_files = [
-        ["Path", "Purpose"],
-        ["src/App.jsx", "Screen routing (landing \u2192 upload \u2192 processing \u2192 explorer)"],
-        ["src/store/useStore.js", "Zustand store (screens, concepts, pipeline, proactive UI)"],
-        ["src/hooks/useProactive.js", "Polls /api/proactive every 15s"],
-        ["src/hooks/useSSE.js", "Generic SSE stream consumption"],
-        ["src/hooks/useUserState.js", "Track and sync user state (debounced 5s)"],
-        ["src/utils/fileParser.js", "ZIP extraction, import detection, path resolution"],
-        ["src/utils/claudeApi.js", "API client helpers"],
-        ["src/utils/graphLayout.js", "D3 force-directed graph layout"],
-        ["src/components/GraphCanvas.jsx", "D3 force-directed concept graph (Canvas)"],
-        ["src/components/InspectorPanel.jsx", "Right sidebar: 3-level explanations, file list"],
-        ["src/components/ChatBar.jsx", "Bottom-left chat with streaming + [[links]]"],
-        ["src/components/InsightCard.jsx", "Floating insight cards (6 categories)"],
-        ["src/components/ExplorationProgress.jsx", "Top banner: exploration % + suggestions"],
-        ["src/components/ProcessingScreen.jsx", "6-step pipeline progress visualization"],
-    ]
-    story.append(styled_table(client_files, [210, content_width - 220], ACCENT_GREEN))
-
-    story.append(PageBreak())
-
-    # ════════════════════════════════════════
-    # 10. COST ESTIMATES
-    # ════════════════════════════════════════
-    story.append(Paragraph("10. Cost Estimates", s['h1']))
-    story.append(GlowLine(content_width, ACCENT_BLUE))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("For a medium codebase (~100 files, ~50K lines):", s['body']))
-    story.append(Spacer(1, 8))
-
-    cost_data = [
-        ["Stage", "Model", "Calls", "Est. Cost"],
-        ["Stage 2: File Analysis", "claude-haiku-4-5", "~7 batches of 15", "~$0.10"],
-        ["Stage 3: Concept Synthesis", "claude-sonnet-4-6", "1", "~$0.09"],
-        ["Stage 4: Depth Mapping", "claude-sonnet-4-6", "1", "~$0.12"],
-        ["Stage 5: Insights", "claude-sonnet-4-6", "1", "~$0.06"],
-        ["Stage 6: Embeddings", "text-embedding-3-small", "~1 batch", "~$0.001"],
-        ["Stage 7: Proactive Seeding", "claude-sonnet-4-6", "1", "~$0.03"],
-        ["Total Ingestion", "", "", "~$0.40"],
-        ["", "", "", ""],
-        ["Per chat message", "claude-sonnet-4-6", "1", "~$0.015"],
-        ["Per explanation", "claude-sonnet-4-6", "1", "~$0.015"],
-        ["Proactive engine", "none (deterministic)", "0", "$0.00"],
-    ]
-
-    cost_table = styled_table(cost_data, [130, 130, 100, content_width - 370], ACCENT_ORANGE)
-    story.append(cost_table)
-
-    story.append(Spacer(1, 20))
-
-    # Not included section
-    story.append(Paragraph("What This Does NOT Include", s['h2']))
-    story.append(Spacer(1, 6))
-
-    exclusions = [
-        ("Authentication", "Not needed for MVP. One user, one project at a time."),
-        ("File watching", "Re-upload the ZIP. Incremental analysis adds complexity for v1."),
-        ("Collaboration", "Single-user tool. Sharing can come later as read-only links."),
-        ("Custom embedding fine-tuning", "Off-the-shelf embeddings with contextual retrieval are good enough."),
-        ("Redis caching", "Supabase is the cache. Add Redis only if query latency becomes a problem."),
-        ("Supabase Realtime", "Pipeline progress uses SSE polling from Hono. Simpler approach."),
-    ]
-
-    for title, reason in exclusions:
-        story.append(Paragraph(
-            f'<font color="#F85149">\u2717</font> '
-            f'<font color="#E6EDF3"><b>{title}</b></font> \u2014 '
-            f'<font color="#8B949E">{reason}</font>',
-            s['bullet']))
-
-    # ── Build ──
-    doc.build(story, onFirstPage=draw_page_bg, onLaterPages=draw_page_bg)
-    print(f"PDF generated: {output_path}")
+    c_pdf.save()
+    print(f"PDF generated: {OUTPUT}")
 
 
 if __name__ == "__main__":
-    output = os.path.join(os.path.dirname(os.path.abspath(__file__)), "AI_ARCHITECTURE.pdf")
-    build_pdf(output)
+    main()

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { requireAuth } from '../middleware/auth.js';
 import { supabase } from '../db/supabase.js';
-import { downloadFileContent } from '../db/fileStorage.js';
+import { downloadFileContent, recoverFileContents } from '../db/fileStorage.js';
 import { runCorePipeline, runEnrichment } from '../pipeline/orchestrator.js';
 import { computeContentHash, findCachedProject } from '../pipeline/contentHash.js';
 import { generateTerminalAnswer } from '../ai/terminalAnswer.js';
@@ -182,6 +182,88 @@ app.post('/pipeline', requireAuth, async (c) => {
         stage: 'error',
         message: err.message || 'Pipeline failed',
       }) });
+    }
+  });
+});
+
+// ---- POST /pipeline/:id/rerun — Re-run pipeline from stored files (CLI) ----
+
+app.post('/pipeline/:id/rerun', requireAuth, async (c) => {
+  const projectId = c.req.param('id');
+  const userId = c.get('userId');
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id, pipeline_status, user_id, name')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+  if (project.user_id && project.user_id !== userId) {
+    return c.json({ error: 'Not authorized' }, 403);
+  }
+
+  const inProgress = ['pending', 'processing', 'stage_1', 'stage_2', 'stage_3'];
+  if (inProgress.includes(project.pipeline_status)) {
+    return c.json({ error: 'Pipeline is already running' }, 409);
+  }
+
+  return streamSSE(c, async (stream) => {
+    try {
+      await stream.writeSSE({ data: JSON.stringify({ stage: 'recovering', message: 'Recovering file contents...' }) });
+
+      const fileContents = await recoverFileContents(projectId);
+      if (Object.keys(fileContents).length === 0) {
+        await stream.writeSSE({ data: JSON.stringify({ stage: 'error', message: 'No file contents found in storage. Please re-upload.' }) });
+        return;
+      }
+
+      // Clear derived data
+      await Promise.all([
+        supabase.from('quiz_state').delete().eq('project_id', projectId),
+        supabase.from('quiz_questions').delete().eq('project_id', projectId),
+        supabase.from('chat_messages').delete().eq('project_id', projectId),
+        supabase.from('code_chunks').delete().eq('project_id', projectId),
+        supabase.from('sub_concepts').delete().eq('project_id', projectId),
+        supabase.from('sub_concept_edges').delete().eq('project_id', projectId),
+      ]);
+      await Promise.all([
+        supabase.from('concept_edges').delete().eq('project_id', projectId),
+        supabase.from('insights').delete().eq('project_id', projectId),
+        supabase.from('user_state').delete().eq('project_id', projectId),
+      ]);
+      await supabase.from('files').delete().eq('project_id', projectId);
+      await supabase.from('concepts').delete().eq('project_id', projectId);
+
+      await supabase
+        .from('projects')
+        .update({ pipeline_status: 'pending', pipeline_progress: null })
+        .eq('id', projectId);
+
+      await stream.writeSSE({ data: JSON.stringify({ stage: 'rerun_started', message: 'Re-running analysis...' }) });
+
+      const synthesis = await runCorePipeline(projectId, { fileTree: null, fileContents, importEdges: [] }, {
+        onProgress: async (stage, message, detail) => {
+          await stream.writeSSE({ data: JSON.stringify({ stage, message, ...detail }) });
+        },
+      });
+
+      const slug = nanoid();
+      await supabase.from('projects').update({ share_slug: slug }).eq('id', projectId);
+      const shareUrl = `https://codebase-explorer-five.vercel.app/explore/${projectId}`;
+
+      await stream.writeSSE({ data: JSON.stringify({
+        stage: 'complete',
+        shareUrl,
+        projectId,
+      }) });
+
+      if (synthesis) {
+        runEnrichment(projectId, fileContents, synthesis, []);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Pipeline failed';
+      await stream.writeSSE({ data: JSON.stringify({ stage: 'error', message }) });
     }
   });
 });

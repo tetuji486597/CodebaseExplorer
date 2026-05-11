@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router';
-import { Sun, Moon, LogOut, Brain, Sparkles, Code2, BookOpen, ChevronRight, BarChart3 } from 'lucide-react';
+import { Sun, Moon, LogOut, Brain, Sparkles, Code2, BookOpen, ChevronRight, BarChart3, RefreshCw } from 'lucide-react';
 import useStore from '../store/useStore';
+import { usePipelineListener } from '../hooks/usePipelineListener';
 import { supabase } from '../lib/supabase';
 import BackBar from './BackBar';
 
@@ -177,6 +178,8 @@ export default function SettingsScreen() {
   const activeDepthLevel = useStore(s => s.activeDepthLevel);
   const setActiveDepthLevel = useStore(s => s.setActiveDepthLevel);
   const signOut = useStore(s => s.signOut);
+  const projectId = useStore(s => s.projectId);
+  const { startListening } = usePipelineListener();
 
   const avatarUrl = user?.user_metadata?.avatar_url;
   const username = user?.user_metadata?.user_name;
@@ -408,6 +411,55 @@ export default function SettingsScreen() {
                   <div style={{ fontSize: 14, fontWeight: 500 }}>Spending Dashboard</div>
                   <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                     API costs, usage tracking, per-project breakdown
+                  </div>
+                </div>
+                <ChevronRight size={16} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+              </button>
+            </SectionCard>
+          )}
+
+          {/* Project actions */}
+          {projectId && (
+            <SectionCard title="Project">
+              <button
+                onClick={async () => {
+                  const success = await useStore.getState().rerunPipeline();
+                  if (success) {
+                    navigate('/processing', { replace: true });
+                    setTimeout(() => startListening(projectId), 100);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  width: '100%',
+                  padding: '12px 0',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--color-text-primary)',
+                  transition: 'color var(--duration-base) var(--ease-out)',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--color-accent-active)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
+              >
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-bg-sunken)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <RefreshCw size={16} strokeWidth={1.75} style={{ color: 'var(--color-accent)' }} />
+                </div>
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>Re-analyze project</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                    Re-run the analysis pipeline using stored files
                   </div>
                 </div>
                 <ChevronRight size={16} strokeWidth={1.75} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />

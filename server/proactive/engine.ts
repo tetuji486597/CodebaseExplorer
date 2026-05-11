@@ -1,5 +1,4 @@
 // Proactive decision engine - deterministic rules handle 80% of cases
-import { supabase } from '../db/supabase.js';
 
 export interface ProactiveAction {
   action: string;
@@ -7,68 +6,6 @@ export interface ProactiveAction {
   reason: string;
   message?: string;
   priority: 'low' | 'medium' | 'high';
-}
-
-// Find the concept node with the lowest universal concept confidence
-async function findGapFillingConcept(
-  concepts: any[],
-  exploredConcepts: string[],
-  projectId?: string,
-  curatedCodebaseId?: string
-): Promise<string | null> {
-  try {
-    // Get universal concept mappings for this project/codebase
-    let query = supabase
-      .from('concept_universal_map')
-      .select('concept_key, universal_concept_id');
-
-    if (curatedCodebaseId) {
-      query = query.eq('curated_codebase_id', curatedCodebaseId);
-    } else if (projectId) {
-      query = query.eq('project_id', projectId);
-    } else {
-      return null;
-    }
-
-    const { data: mappings } = await query;
-    if (!mappings || mappings.length === 0) return null;
-
-    // Get user's confidence for these universal concepts
-    const ucIds = [...new Set(mappings.map((m: any) => m.universal_concept_id))];
-    const { data: progress } = await supabase
-      .from('user_concept_progress')
-      .select('concept_id, confidence')
-      .eq('user_id', 'anonymous')
-      .in('concept_id', ucIds);
-
-    const confidenceMap = new Map((progress || []).map((p: any) => [p.concept_id, p.confidence || 0]));
-
-    // Score each unexplored concept by how low its mapped universal concept confidence is
-    const unexplored = concepts.filter((c: any) => !exploredConcepts.includes(c.concept_key));
-    if (unexplored.length === 0) return null;
-
-    let bestConcept: string | null = null;
-    let lowestScore = Infinity;
-
-    for (const concept of unexplored) {
-      const conceptMappings = mappings.filter((m: any) => m.concept_key === concept.concept_key);
-      if (conceptMappings.length === 0) continue;
-
-      const avgConfidence = conceptMappings.reduce(
-        (sum: number, m: any) => sum + (confidenceMap.get(m.universal_concept_id) || 0),
-        0
-      ) / conceptMappings.length;
-
-      if (avgConfidence < lowestScore) {
-        lowestScore = avgConfidence;
-        bestConcept = concept.concept_key;
-      }
-    }
-
-    return bestConcept;
-  } catch {
-    return null;
-  }
 }
 
 export async function getNextAction(
@@ -84,51 +21,24 @@ export async function getNextAction(
   const explorationPath = userState.exploration_path || [];
   const timePerConcept = userState.time_per_concept || {};
 
-  // Rule 1: If user just arrived, find the best starting concept based on gaps
+  // Rule 1: If user just arrived, suggest the best starting concept
   if (exploredConcepts.length === 0) {
-    // Try gap-filling first for curated codebases
-    const gapConcept = await findGapFillingConcept(
-      concepts,
-      exploredConcepts,
-      project?.id,
-      project?.curated_codebase_id
-    );
-
-    const startingConcept = gapConcept || explorationPath[0] || concepts.find((c) => c.importance === 'critical')?.concept_key || concepts[0]?.concept_key;
+    const startingConcept = explorationPath[0] || concepts.find((c) => c.importance === 'critical')?.concept_key || concepts[0]?.concept_key;
 
     if (startingConcept) {
       const concept = concepts.find((c) => c.concept_key === startingConcept);
       return {
         action: 'highlight_concept',
         target_id: startingConcept,
-        message: gapConcept
-          ? `Start here — ${concept?.name || startingConcept} will fill a gap in your understanding`
-          : `Start here — ${concept?.name || startingConcept} is the heart of the app`,
-        reason: gapConcept ? 'Gap-filling: lowest confidence universal concepts' : 'User has not explored any concepts yet',
+        message: `Start here — ${concept?.name || startingConcept} is the heart of the app`,
+        reason: 'User has not explored any concepts yet',
         priority: 'high',
       };
     }
   }
 
-  // Rule 2: Suggest next concept — prefer gap-filling over fixed path
-  if (project?.curated_codebase_id) {
-    const gapConcept = await findGapFillingConcept(
-      concepts,
-      exploredConcepts,
-      project.id,
-      project.curated_codebase_id
-    );
-    if (gapConcept) {
-      const concept = concepts.find((c) => c.concept_key === gapConcept);
-      return {
-        action: 'highlight_concept',
-        target_id: gapConcept,
-        message: `Next up: ${concept?.name || gapConcept}`,
-        reason: 'Gap-filling suggestion',
-        priority: 'medium',
-      };
-    }
-  } else if (currentPosition < explorationPath.length) {
+  // Rule 2: Suggest next concept from the exploration path
+  if (currentPosition < explorationPath.length) {
     const nextConcept = explorationPath[currentPosition];
     if (!exploredConcepts.includes(nextConcept)) {
       const concept = concepts.find((c) => c.concept_key === nextConcept);

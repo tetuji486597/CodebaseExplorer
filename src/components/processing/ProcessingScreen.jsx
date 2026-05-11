@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
-import { AlertTriangle, ArrowLeft, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { usePipelineListener } from '../../hooks/usePipelineListener';
 import useSmoothedProgress from './useSmoothedProgress';
 import ProgressRing from './ProgressRing';
 import StageIndicator from './StageIndicator';
@@ -23,9 +24,11 @@ export default function ProcessingScreen() {
   const pipelineProgress = useStore((s) => s.pipelineProgress);
   const pipelineStatus = useStore((s) => s.pipelineStatus);
   const processingError = useStore((s) => s.processingError);
+  const projectId = useStore((s) => s.projectId);
   const percent = useSmoothedProgress(pipelineProgress);
   const currentStage = pipelineProgress?.stage ?? 0;
   const navigate = useNavigate();
+  const { startListening } = usePipelineListener();
 
   const isError = processingError
     || pipelineStatus === 'failed'
@@ -78,24 +81,47 @@ export default function ProcessingScreen() {
             </p>
           </div>
 
-          <button
-            onClick={() => navigate('/upload', { replace: true })}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '12px 24px', borderRadius: 'var(--radius-sm)',
-              fontSize: 13, fontWeight: 600, minHeight: 44,
-              background: 'var(--color-bg-elevated)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-visible)',
-              cursor: 'pointer',
-              transition: 'all 150ms ease-out',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-accent)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-bg-elevated)'; }}
-          >
-            <ArrowLeft size={15} strokeWidth={2} />
-            Back to upload
-          </button>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button
+              onClick={async () => {
+                const success = await useStore.getState().rerunPipeline();
+                if (success && projectId) startListening(projectId);
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '12px 24px', borderRadius: 'var(--radius-sm)',
+                fontSize: 13, fontWeight: 600, minHeight: 44,
+                background: 'var(--color-accent)',
+                color: '#fff',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 150ms ease-out',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+            >
+              <RefreshCw size={15} strokeWidth={2} />
+              Retry Analysis
+            </button>
+            <button
+              onClick={() => navigate('/upload', { replace: true })}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '12px 24px', borderRadius: 'var(--radius-sm)',
+                fontSize: 13, fontWeight: 600, minHeight: 44,
+                background: 'var(--color-bg-elevated)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-visible)',
+                cursor: 'pointer',
+                transition: 'all 150ms ease-out',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-bg-accent)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--color-bg-elevated)'; }}
+            >
+              <ArrowLeft size={15} strokeWidth={2} />
+              Back to upload
+            </button>
+          </div>
         </motion.div>
       ) : (
         <motion.div
