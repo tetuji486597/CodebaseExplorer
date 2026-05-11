@@ -212,16 +212,36 @@ Return a single unified concept_synthesis result with deduplicated concepts (3-1
     console.error('Failed to batch insert concepts:', conceptsError);
   }
 
-  // Update files with concept_id (batch via Promise.all)
-  const fileUpdatePromises = result.concepts.flatMap((concept) =>
-    concept.file_ids.map((filePath) =>
-      supabase
-        .from('files')
-        .update({ concept_id: concept.id })
-        .eq('project_id', projectId)
-        .eq('path', filePath)
-    )
+  // Build file→concept map from validated concepts, then update files
+  const fileToConceptMap: Record<string, string> = {};
+  result.concepts.forEach((concept) => {
+    concept.file_ids.forEach((filePath) => {
+      fileToConceptMap[filePath] = concept.id;
+    });
+  });
+
+  const fileUpdatePromises = Object.entries(fileToConceptMap).map(([filePath, conceptId]) =>
+    supabase
+      .from('files')
+      .update({ concept_id: conceptId })
+      .eq('project_id', projectId)
+      .eq('path', filePath)
   );
+
+  // Assign unassigned files to __universe__
+  const assignedPaths = new Set(Object.keys(fileToConceptMap));
+  fileAnalyses.forEach((f) => {
+    if (!assignedPaths.has(f.path)) {
+      fileUpdatePromises.push(
+        supabase
+          .from('files')
+          .update({ concept_id: '__universe__' })
+          .eq('project_id', projectId)
+          .eq('path', f.path)
+      );
+    }
+  });
+
   await Promise.all(fileUpdatePromises);
 
   // Store edges (batch insert)

@@ -2,17 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { usePostHog } from '@posthog/react';
 import TopBar from './TopBar';
-import GraphCanvas from './GraphCanvas';
+import CirclePackCanvas from './graph/CirclePackCanvas';
 import InspectorPanel from './InspectorPanel';
 import GuidedOverlay from './GuidedOverlay';
 import ChatPanel from './ChatPanel';
 import CommandPalette from './CommandPalette';
 import CodePanel from './CodePanel';
-import Onboarding from './Onboarding';
 import InsightCard from './InsightCard';
 import ExplorationProgress from './ExplorationProgress';
-import CompletionSummary from './CompletionSummary';
-import useUserState from '../hooks/useUserState';
+import FilesPanel from './FilesPanel';
 import useEnrichmentPoller from '../hooks/useEnrichmentPoller';
 import useStore from '../store/useStore';
 import { fetchAndLoadProject } from '../lib/loadProject';
@@ -54,6 +52,8 @@ export default function ExplorerView() {
   const showInspector = useStore(s => s.showInspector);
   const guidedMode = useStore(s => s.guidedMode);
   const universeMode = useStore(s => s.universeMode);
+  const childrenRevealed = useStore(s => s.childrenRevealed);
+  const selectedNode = useStore(s => s.selectedNode);
   const chatPanelOpen = useStore(s => s.chatPanelOpen);
   const setChatPanelOpen = useStore(s => s.setChatPanelOpen);
   const setCommandPaletteOpen = useStore(s => s.setCommandPaletteOpen);
@@ -112,9 +112,7 @@ export default function ExplorerView() {
   }, [concepts.length, projectId, urlProjectId, navigate]);
 
   // Activate user state tracking and enrichment polling
-  useUserState();
   // Update exploration progress
-  const selectedNode = useStore(s => s.selectedNode);
   const setExplorationProgress = useStore(s => s.setExplorationProgress);
   useEffect(() => {
     const userState = useStore.getState().userState;
@@ -150,16 +148,17 @@ export default function ExplorerView() {
   return (
     <div ref={containerRef} className={gridClasses}>
       <TopBar />
-      <GraphCanvas />
-      {!universeMode && <InspectorPanel />}
-      {!universeMode && <GuidedOverlay />}
+      <FilesPanel />
+      <CirclePackCanvas />
+      <InspectorPanel />
+      {childrenRevealed && <GuidedOverlay />}
 
       {/* Chat system */}
-      {!universeMode && <ChatPanel />}
-      {!universeMode && <CommandPalette />}
+      {(childrenRevealed || selectedNode) && <ChatPanel />}
+      {(childrenRevealed || selectedNode) && <CommandPalette />}
 
       {/* Chat FAB */}
-      {!universeMode && (
+      {(childrenRevealed || selectedNode) && (
         <button
           className={`chat-fab ${chatMessages.length > 0 && !chatPanelOpen ? 'chat-fab--unread' : ''}`}
           onClick={() => {
@@ -178,11 +177,9 @@ export default function ExplorerView() {
       )}
 
       {/* Floating / overlay elements (above the grid) */}
-      {!universeMode && <ExplorationProgress />}
-      {!universeMode && <InsightCard />}
-      {!universeMode && <CodePanel />}
-      {!universeMode && <Onboarding />}
-      {!universeMode && <CompletionSummary />}
+      {childrenRevealed && <ExplorationProgress />}
+      {childrenRevealed && <InsightCard />}
+      {childrenRevealed && <CodePanel />}
       <Toast />
 
     </div>

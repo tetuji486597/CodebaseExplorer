@@ -61,6 +61,15 @@ function applySubConcepts(store, subConcepts, subConceptEdges) {
   store.setSubConceptsReadyKeys(Object.keys(grouped));
 }
 
+async function getAuthHeaders() {
+  const headers = {};
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  return headers;
+}
+
 function pollForSubConcepts(store, projectId) {
   let attempts = 0;
   const maxAttempts = 10;
@@ -73,19 +82,18 @@ function pollForSubConcepts(store, projectId) {
     try {
       const concepts = store.concepts || useStore.getState().concepts;
       if (!concepts.length) return;
+      const headers = await getAuthHeaders();
       const firstKey = concepts[0].id;
-      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/sub-concepts/${firstKey}`);
+      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/sub-concepts/${firstKey}`, { headers });
       if (!res.ok) return;
       const data = await res.json();
       if (data.ready && data.sub_concepts?.length) {
         clearInterval(interval);
-        // Sub-concepts are ready — refetch full project data for all of them
-        const fullRes = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`);
+        const fullRes = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`, { headers });
         if (fullRes.ok) {
           const fullData = await fullRes.json();
           if (fullData.sub_concepts?.length) {
             applySubConcepts(store, fullData.sub_concepts, fullData.sub_concept_edges);
-            // Rebuild tour path now that sub-concepts are available
             const { explorationPath, concepts: storeConcepts } = useStore.getState();
             if (explorationPath?.length) {
               const cache = useStore.getState().subConceptsCache;
@@ -99,19 +107,19 @@ function pollForSubConcepts(store, projectId) {
   }, 3000);
 }
 
-/**
- * Fetch project data from the API, transform it into store format, and load it.
- * Returns the transformed concepts array (for callers that need it), or null on failure.
- */
 export async function fetchAndLoadProject(projectId) {
   try {
-    const headers = {};
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
+    let headers = await getAuthHeaders();
+    let res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`, { headers });
+
+    if (res.status === 401) {
+      const { data: { session } } = await supabase.auth.refreshSession();
+      if (session?.access_token) {
+        headers = { 'Authorization': `Bearer ${session.access_token}` };
+        res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`, { headers });
+      }
     }
 
-    const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/data`, { headers });
     if (!res.ok) return null;
     const data = await res.json();
     return loadProjectData(data, projectId);
@@ -161,6 +169,8 @@ export function loadProjectData(data, projectId) {
     })),
     codeSnippet: '',
     role: f.role,
+    complexity: f.analysis?.complexity || null,
+    dependencies: f.analysis?.depends_on || [],
   }));
 
   const conceptEdges = (data.edges || []).map(e => ({
@@ -175,18 +185,14 @@ export function loadProjectData(data, projectId) {
     store.setInsights(data.insights);
   }
   if (data.userState) {
-    store.setUserState(data.userState);
-
     const path = data.userState.exploration_path;
     if (path?.length) {
       const conceptIds = new Set(concepts.map(c => c.id));
       const validPath = path.filter(key => conceptIds.has(key));
       if (validPath.length) {
         store.setExplorationPath(validPath);
-        store.setGuidedMode(true);
         store.setGuidedPosition(0);
         store.setTourPosition(0);
-        store.setSelectedNode({ type: 'concept', id: validPath[0] });
         store.dismissOnboarding();
 
         // Build tour path if sub-concepts are already available
@@ -203,6 +209,9 @@ export function loadProjectData(data, projectId) {
           const tourPath = buildTourPath(validPath, tempCache, concepts);
           if (tourPath) store.setTourPath(tourPath);
         }
+
+        // Enter guided mode after tour path is ready
+        store.enterGuidedMode();
 
         initQuizState(projectId, validPath);
       }
@@ -271,6 +280,7 @@ export function loadProjectData(data, projectId) {
     }
   }
 
+  console.log('[loadProject] conceptEdges:', conceptEdges.length, 'sample:', conceptEdges[0]);
   store.loadData({ concepts, files, conceptEdges, fileImports: [] });
 
   // Load chat history if available (cross-platform continuity)

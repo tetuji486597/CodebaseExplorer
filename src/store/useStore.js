@@ -2,6 +2,37 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { API_BASE } from '../lib/api';
 
+function navigateDrillToStop(targetStop, getState) {
+  const state = getState();
+  if (targetStop.type === 'chapter_intro') {
+    if (state.focusStack.length > 1) {
+      // Drill all the way out to universe
+      while (getState().focusStack.length > 1) {
+        getState().drillOut();
+      }
+    } else if (!state.childrenRevealed) {
+      getState().revealChildren();
+    }
+  } else if (targetStop.type === 'section') {
+    const parentKey = targetStop.conceptKey;
+    const cur = getState();
+    if (cur.focusNodeId !== parentKey) {
+      // If we're inside a different parent, drill out first
+      if (cur.focusStack.length > 1) {
+        while (getState().focusStack.length > 1) {
+          getState().drillOut();
+        }
+      }
+      // Ensure children are revealed at universe level
+      if (!getState().childrenRevealed) {
+        getState().revealChildren();
+      }
+      // Drill into the target parent
+      getState().drillInto(parentKey);
+    }
+  }
+}
+
 const useStore = create((set, get) => ({
   // Auth state
   user: null,
@@ -20,9 +51,21 @@ const useStore = create((set, get) => ({
     return session?.provider_token || localStorage.getItem('cbe_github_token');
   },
 
+  // Cached project list for "My Projects" panel
+  cachedProjects: null,
+  cachedProjectsAt: 0,
+  setCachedProjects: (projects) => set({ cachedProjects: projects, cachedProjectsAt: Date.now() }),
+
   // View mode
   viewMode: 'concepts', // 'concepts' | 'files'
   setViewMode: (viewMode) => set({ viewMode }),
+
+  // Files panel
+  filesPanelOpen: false,
+  toggleFilesPanel: () => set(s => ({ filesPanelOpen: !s.filesPanelOpen })),
+  setFilesPanelOpen: (open) => set({ filesPanelOpen: open }),
+  fileSearchQuery: '',
+  setFileSearchQuery: (q) => set({ fileSearchQuery: q }),
 
   // Data
   concepts: [],
@@ -95,8 +138,6 @@ const useStore = create((set, get) => ({
 
   // Onboarding
   showOnboarding: true,
-  onboardingStep: 0,
-  setOnboardingStep: (step) => set({ onboardingStep: step }),
   dismissOnboarding: () => set({ showOnboarding: false }),
 
   // Upload feature flag
@@ -166,6 +207,39 @@ const useStore = create((set, get) => ({
     get().resetProject();
   },
 
+  // Re-run pipeline on current project using stored files
+  rerunPipeline: async () => {
+    const { projectId, user } = get();
+    if (!projectId) return false;
+    set({
+      processingError: null,
+      processingStatus: 'Preparing to re-analyze...',
+      pipelineStatus: 'pending',
+      pipelineProgress: null,
+      concepts: [],
+      files: [],
+      conceptEdges: [],
+      insights: [],
+    });
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/${projectId}/rerun`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        set({ processingError: { message: err.error || 'Rerun failed' }, pipelineStatus: 'failed' });
+        return false;
+      }
+      localStorage.setItem('cbe_active_project', projectId);
+      return true;
+    } catch (err) {
+      set({ processingError: { message: err.message || 'Network error' }, pipelineStatus: 'failed' });
+      return false;
+    }
+  },
+
   insightCard: null,
   setInsightCard: (card) => set({ insightCard: card }),
   explorationProgress: 0,
@@ -186,47 +260,117 @@ const useStore = create((set, get) => ({
     setTimeout(() => set({ toast: null }), duration);
   },
 
-  // User exploration state (synced with backend)
-  userState: null,
-  setUserState: (state) => set({ userState: state }),
-
   // Guided tour mode
   guidedMode: false,
   guidedPosition: 0,
   explorationPath: [],
+  tourPath: null,
+  tourPosition: 0,
   setGuidedMode: (active) => set({ guidedMode: active }),
   setGuidedPosition: (pos) => set({ guidedPosition: pos }),
   setExplorationPath: (path) => set({ explorationPath: path }),
+  setTourPath: (path) => set({ tourPath: path }),
+  setTourPosition: (pos) => set({ tourPosition: pos }),
   advanceGuided: () => {
-    const { guidedPosition, explorationPath, markConceptExplored } = get();
-    if (guidedPosition >= explorationPath.length - 1) return;
-    markConceptExplored(explorationPath[guidedPosition]);
-    const next = guidedPosition + 1;
+    const state = get();
+    const { tourPath, tourPosition, markConceptExplored } = state;
+    if (!tourPath?.stops?.length) {
+      const { guidedPosition, explorationPath } = state;
+      if (guidedPosition >= explorationPath.length - 1) return;
+      markConceptExplored(explorationPath[guidedPosition]);
+      const next = guidedPosition + 1;
+      set({ guidedPosition: next, selectedNode: { type: 'concept', id: explorationPath[next] }, showInspector: false });
+      return;
+    }
+    if (tourPosition >= tourPath.stops.length - 1) return;
+    const currentStop = tourPath.stops[tourPosition];
+    const nextStop = tourPath.stops[tourPosition + 1];
+
+    if (currentStop.type === 'section' && nextStop.type === 'chapter_intro') {
+      markConceptExplored(currentStop.conceptKey);
+    }
+
+    const nextPos = tourPosition + 1;
     set({
-      guidedPosition: next,
-      selectedNode: { type: 'concept', id: explorationPath[next] },
-      showInspector: false,
+      tourPosition: nextPos,
+      guidedPosition: nextPos,
+      selectedNode: { type: 'concept', id: nextStop.id },
+      showInspector: true,
     });
+    navigateDrillToStop(nextStop, get);
   },
   retreatGuided: () => {
-    const { guidedPosition, explorationPath } = get();
-    if (guidedPosition <= 0) return;
-    const prev = guidedPosition - 1;
+    const state = get();
+    const { tourPath, tourPosition } = state;
+    if (!tourPath?.stops?.length) {
+      const { guidedPosition, explorationPath } = state;
+      if (guidedPosition <= 0) return;
+      const prev = guidedPosition - 1;
+      set({ guidedPosition: prev, selectedNode: { type: 'concept', id: explorationPath[prev] }, showInspector: false });
+      return;
+    }
+    if (tourPosition <= 0) return;
+    const prevStop = tourPath.stops[tourPosition - 1];
+    const prevPos = tourPosition - 1;
     set({
-      guidedPosition: prev,
-      selectedNode: { type: 'concept', id: explorationPath[prev] },
-      showInspector: false,
+      tourPosition: prevPos,
+      guidedPosition: prevPos,
+      selectedNode: { type: 'concept', id: prevStop.id },
+      showInspector: true,
     });
+    navigateDrillToStop(prevStop, get);
+  },
+  skipToNextChapter: () => {
+    const { tourPath, tourPosition, markConceptExplored } = get();
+    if (!tourPath?.stops?.length) return;
+    const currentStop = tourPath.stops[tourPosition];
+    markConceptExplored(currentStop.conceptKey);
+    for (let i = tourPosition + 1; i < tourPath.stops.length; i++) {
+      if (tourPath.stops[i].type === 'chapter_intro') {
+        set({
+          tourPosition: i,
+          guidedPosition: i,
+          selectedNode: { type: 'concept', id: tourPath.stops[i].id },
+          showInspector: true,
+        });
+        navigateDrillToStop(tourPath.stops[i], get);
+        return;
+      }
+    }
+  },
+  jumpToChapter: (chapterIndex) => {
+    const { tourPath } = get();
+    if (!tourPath?.stops?.length) return;
+    const stopIdx = tourPath.stops.findIndex(
+      s => s.type === 'chapter_intro' && s.chapterIndex === chapterIndex
+    );
+    if (stopIdx === -1) return;
+    set({
+      tourPosition: stopIdx,
+      guidedPosition: stopIdx,
+      selectedNode: { type: 'concept', id: tourPath.stops[stopIdx].id },
+      showInspector: true,
+    });
+    navigateDrillToStop(tourPath.stops[stopIdx], get);
   },
   exitGuidedMode: () => set({ guidedMode: false }),
   enterGuidedMode: () => {
-    const { guidedPosition, explorationPath } = get();
-    if (!explorationPath.length) return;
-    set({
-      guidedMode: true,
-      selectedNode: { type: 'concept', id: explorationPath[guidedPosition] },
-      showInspector: true,
-    });
+    const { tourPosition, tourPath, guidedPosition, explorationPath } = get();
+    if (tourPath?.stops?.length) {
+      const stop = tourPath.stops[tourPosition];
+      set({
+        guidedMode: true,
+        selectedNode: { type: 'concept', id: stop.id },
+        showInspector: true,
+      });
+      navigateDrillToStop(stop, get);
+    } else if (explorationPath.length) {
+      set({
+        guidedMode: true,
+        selectedNode: { type: 'concept', id: explorationPath[guidedPosition] },
+        showInspector: true,
+      });
+    }
   },
 
   // Quiz state
@@ -257,6 +401,77 @@ const useStore = create((set, get) => ({
   // Universe bubble mode (initial zoom-in experience)
   universeMode: true,
   setUniverseMode: (active) => set({ universeMode: active }),
+
+  // Circle-pack navigation state
+  focusStack: ['__universe__'],
+  focusNodeId: '__universe__',
+  childrenRevealed: false,
+  visibleDepth: 1,
+  drillTransition: null,
+
+  revealChildren: () => {
+    const state = get();
+    if (state.childrenRevealed) return;
+    set({ childrenRevealed: true, universeMode: false });
+    if (!state.subConceptsCache[state.focusNodeId] && !state.subConceptsLoading.has(state.focusNodeId)) {
+      get().fetchSubConcepts(state.focusNodeId);
+    }
+  },
+
+  drillInto: (nodeId) => {
+    const state = get();
+    if (nodeId === state.focusNodeId) {
+      get().revealChildren();
+      return;
+    }
+    set({
+      focusStack: [...state.focusStack, nodeId],
+      focusNodeId: nodeId,
+      childrenRevealed: true,
+      drillTransition: { type: 'in', targetId: nodeId, startedAt: Date.now() },
+      universeMode: false,
+    });
+    if (!state.subConceptsCache[nodeId] && !state.subConceptsLoading.has(nodeId)) {
+      get().fetchSubConcepts(nodeId);
+    }
+  },
+
+  drillOut: () => {
+    const state = get();
+    // At universe level with children shown: collapse to hero
+    if (state.childrenRevealed && state.focusStack.length <= 1) {
+      set({ childrenRevealed: false, universeMode: true });
+      return;
+    }
+    // At a deeper level: go back to parent (show parent's children)
+    if (state.focusStack.length <= 1) return;
+    const nextStack = state.focusStack.slice(0, -1);
+    const parentId = nextStack[nextStack.length - 1];
+    set({
+      focusStack: nextStack,
+      focusNodeId: parentId,
+      childrenRevealed: true,
+      drillTransition: { type: 'out', targetId: parentId, startedAt: Date.now() },
+      universeMode: false,
+    });
+  },
+
+  drillToLevel: (index) => {
+    const state = get();
+    if (index < 0 || index >= state.focusStack.length) return;
+    const nextStack = state.focusStack.slice(0, index + 1);
+    const targetId = nextStack[nextStack.length - 1];
+    set({
+      focusStack: nextStack,
+      focusNodeId: targetId,
+      childrenRevealed: true,
+      drillTransition: { type: 'out', targetId, startedAt: Date.now() },
+      universeMode: false,
+    });
+  },
+
+  setVisibleDepth: (depth) => set({ visibleDepth: depth }),
+  clearDrillTransition: () => set({ drillTransition: null }),
 
   // Code element expansion state (Level 3 semantic zoom)
   codeElementExpansions: {},   // { [subConceptId]: { elements: [...], expandedAt } }
@@ -311,6 +526,7 @@ const useStore = create((set, get) => ({
   subConceptsCache: {},
   subConceptsLoading: new Set(),
   subConceptsReadyKeys: new Set(),
+  subConceptExpandable: new Set(),
   setSubConceptsReadyKeys: (keys) => set({ subConceptsReadyKeys: new Set(keys) }),
   setSubConceptsCache: (cache) => set({ subConceptsCache: cache }),
 
@@ -402,7 +618,7 @@ const useStore = create((set, get) => ({
 
     // Sprawl check: auto-collapse oldest if too many expansions
     const expansionCount = Object.keys(get().expansions).length;
-    if (expansionCount > 3) {
+    if (expansionCount > 5) {
       const history = get().expansionHistory;
       if (history.length > 0) {
         const oldest = history[0];
@@ -414,7 +630,13 @@ const useStore = create((set, get) => ({
 
   expandConcept: (parentId, subConcepts, subEdges) => {
     const state = get();
-    const parent = state.concepts.find(c => c.id === parentId);
+    let parent = state.concepts.find(c => c.id === parentId);
+    if (!parent) {
+      for (const exp of Object.values(state.expansions)) {
+        parent = exp.subConcepts.find(sc => sc.id === parentId);
+        if (parent) break;
+      }
+    }
     if (!parent) return;
 
     const subConceptNodes = subConcepts.map(sc => ({
@@ -429,6 +651,11 @@ const useStore = create((set, get) => ({
       _parentId: parentId,
     }));
 
+    const nextExpandable = new Set(state.subConceptExpandable);
+    for (const sc of subConceptNodes) {
+      if (sc.fileIds.length >= 2) nextExpandable.add(sc.id);
+    }
+
     set(s => ({
       expansions: {
         ...s.expansions,
@@ -442,6 +669,7 @@ const useStore = create((set, get) => ({
         ...s.expansionHistory,
         { conceptId: parentId, name: parent.name, expandedAt: Date.now() },
       ],
+      subConceptExpandable: nextExpandable,
     }));
   },
 
@@ -450,17 +678,24 @@ const useStore = create((set, get) => ({
     const expansion = state.expansions[parentId];
     if (!expansion) return;
 
-    const childIds = new Set(expansion.subConcepts);
+    for (const sc of expansion.subConcepts) {
+      if (state.expansions[sc.id]) {
+        get().collapseConcept(sc.id);
+      }
+    }
 
-    const nextCodeExpansions = { ...state.codeElementExpansions };
+    const freshState = get();
+    const childIds = new Set(expansion.subConcepts.map(sc => sc.id));
+
+    const nextCodeExpansions = { ...freshState.codeElementExpansions };
     childIds.forEach(id => { delete nextCodeExpansions[id]; });
 
-    const nextExpansions = { ...state.expansions };
+    const nextExpansions = { ...freshState.expansions };
     delete nextExpansions[parentId];
 
     set({
       expansions: nextExpansions,
-      expansionHistory: state.expansionHistory.filter(h => h.conceptId !== parentId),
+      expansionHistory: freshState.expansionHistory.filter(h => h.conceptId !== parentId),
       codeElementExpansions: nextCodeExpansions,
     });
   },
@@ -512,20 +747,21 @@ const useStore = create((set, get) => ({
     pipelineStatus: null, pipelineProgress: null, processingError: null,
     selectedNode: null, showInspector: false,
     chatMessages: [], chatLoading: false, chatPanelOpen: false, commandPaletteOpen: false, chatStreamingText: '',
-    guidedMode: false, guidedPosition: 0, explorationPath: [],
+    guidedMode: false, guidedPosition: 0, explorationPath: [], tourPath: null, tourPosition: 0,
     exploredConcepts: new Set(),
-    explorationProgress: 0, userState: null,
+    explorationProgress: 0,
     insightCard: null, insights: [],
     quizGateActive: false, quizGateQuestions: [], quizGateType: null,
     quizCurrentIndex: 0, quizAnswers: [], quizStats: {},
     curatedCodebaseId: null,
     showCodePanel: false, codePanelFileId: null,
-    showOnboarding: true, onboardingStep: 0,
+    showOnboarding: true,
     toast: null,
     expansions: {}, expandedNodeIds: new Set(), expansionHistory: [],
     highlightedPath: null, codeElementExpansions: {},
     universeMode: true,
-    subConceptsCache: {}, subConceptsLoading: new Set(), subConceptsReadyKeys: new Set(),
+    focusStack: ['__universe__'], focusNodeId: '__universe__', childrenRevealed: false, visibleDepth: 1, drillTransition: null,
+    subConceptsCache: {}, subConceptsLoading: new Set(), subConceptsReadyKeys: new Set(), subConceptExpandable: new Set(),
   }),
 
   // Helpers

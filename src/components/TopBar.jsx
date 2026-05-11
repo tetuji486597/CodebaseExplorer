@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import posthog from '../lib/posthog';
 import useStore from '../store/useStore';
-import { Compass, FolderTree, Route, User, Sun, Moon, Home, Settings, Link, Check, HelpCircle } from 'lucide-react';
+import { Compass, FolderTree, Route, Sun, Moon, Home, Settings, Link, Check, HelpCircle } from 'lucide-react';
 
 export default function TopBar() {
   const [copied, setCopied] = useState(false);
-  const viewMode = useStore(s => s.viewMode);
-  const setViewMode = useStore(s => s.setViewMode);
+  const filesPanelOpen = useStore(s => s.filesPanelOpen);
+  const toggleFilesPanel = useStore(s => s.toggleFilesPanel);
   const concepts = useStore(s => s.concepts);
   const exploredConcepts = useStore(s => s.exploredConcepts);
   const guidedMode = useStore(s => s.guidedMode);
@@ -91,69 +91,58 @@ export default function TopBar() {
         </div>
       </div>
 
-      {/* Center: Segmented control (concepts/files) */}
+      {/* Center: Concepts label + Files toggle */}
       {!guidedMode && totalCount > 0 && (
         <div
           className="hide-on-mobile"
           style={{
-            position: 'relative',
             display: 'inline-flex',
-            padding: 3,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-bg-sunken)',
-            border: '1px solid var(--color-border-subtle)',
+            alignItems: 'center',
+            gap: 6,
             flexShrink: 0,
           }}
         >
           <div
-            aria-hidden
             style={{
-              position: 'absolute',
-              top: 3,
-              bottom: 3,
-              left: viewMode === 'concepts' ? 3 : 'calc(50% + 1px)',
-              width: 'calc(50% - 4px)',
-              background: 'var(--color-bg-elevated)',
-              borderRadius: 'var(--radius-sm)',
-              boxShadow: 'var(--shadow-xs)',
-              transition: `left var(--duration-base) var(--ease-out)`,
-            }}
-          />
-          <button
-            onClick={() => { setViewMode('concepts'); posthog.capture('view_mode_switched', { mode: 'concepts' }); }}
-            style={{
-              position: 'relative',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
               padding: '6px 14px',
               fontSize: 12,
               fontWeight: 500,
-              color: viewMode === 'concepts' ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              transition: `color var(--duration-base) var(--ease-out)`,
+              color: 'var(--color-accent-active)',
             }}
           >
             <Compass size={13} strokeWidth={1.75} />
             Concepts
-          </button>
+          </div>
           <button
-            onClick={() => { setViewMode('files'); posthog.capture('view_mode_switched', { mode: 'files' }); }}
+            onClick={() => { toggleFilesPanel(); posthog.capture('files_panel_toggled', { open: !filesPanelOpen }); }}
             style={{
-              position: 'relative',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
               padding: '6px 14px',
               fontSize: 12,
               fontWeight: 500,
-              color: viewMode === 'files' ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
-              background: 'transparent',
-              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              color: filesPanelOpen ? 'var(--color-accent-active)' : 'var(--color-text-tertiary)',
+              background: filesPanelOpen ? 'var(--color-accent-soft)' : 'transparent',
+              border: `1px solid ${filesPanelOpen ? 'var(--color-accent)' : 'var(--color-border-subtle)'}`,
               cursor: 'pointer',
-              transition: `color var(--duration-base) var(--ease-out)`,
+              transition: `all var(--duration-base) var(--ease-out)`,
+            }}
+            onMouseEnter={e => {
+              if (!filesPanelOpen) {
+                e.currentTarget.style.background = 'var(--color-bg-sunken)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }
+            }}
+            onMouseLeave={e => {
+              if (!filesPanelOpen) {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--color-text-tertiary)';
+              }
             }}
           >
             <FolderTree size={13} strokeWidth={1.75} />
@@ -321,35 +310,6 @@ export default function TopBar() {
           {darkMode ? <Sun size={15} strokeWidth={1.75} /> : <Moon size={15} strokeWidth={1.75} />}
         </button>
 
-        <button
-          onClick={() => navigate('/profile')}
-          aria-label="Comprehension profile"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 12,
-            fontWeight: 500,
-            color: 'var(--color-text-secondary)',
-            background: 'transparent',
-            border: '1px solid var(--color-border-subtle)',
-            cursor: 'pointer',
-            transition: `all var(--duration-base) var(--ease-out)`,
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'var(--color-bg-sunken)';
-            e.currentTarget.style.color = 'var(--color-text-primary)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--color-text-secondary)';
-          }}
-        >
-          <User size={13} strokeWidth={1.75} />
-          <span className="hide-on-mobile">Profile</span>
-        </button>
       </div>
 
       <style>{`
